@@ -1,4 +1,9 @@
-FROM python:3.10-slim
+FROM python:3.9-slim
+
+# تثبيت التبعيات النظامية المطلوبة
+RUN apt-get update && apt-get install -y \
+    pdf2htmlEX \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

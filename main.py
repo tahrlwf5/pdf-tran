@@ -1,5 +1,5 @@
 import telegram
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+from telegram.ext import Updater, CommandHandler, MessageHandler, filters
 from googletrans import Translator
 from bs4 import BeautifulSoup
 import subprocess
@@ -89,8 +89,8 @@ def main():
     dp = updater.dispatcher
 
     dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(MessageHandler(Filters.document.mime_type("text/html"), translate_html))
-    dp.add_handler(MessageHandler(Filters.document.mime_type("application/pdf"), translate_pdf))
+    dp.add_handler(MessageHandler(filters.Document.mime_type("text/html"), translate_html))
+    dp.add_handler(MessageHandler(filters.Document.mime_type("application/pdf"), translate_pdf))
 
     updater.start_polling()
     updater.idle()

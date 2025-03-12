@@ -1,14 +1,10 @@
 import os
 import logging
+import pdfkit
 from telegram import Update, InputFile
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 from bs4 import BeautifulSoup
 from googletrans import Translator
-import pdfkit  # مكتبة جديدة مضافة
-
-# إعدادات إضافية لـ pdfkit
-path_wkhtmltopdf = '/usr/local/bin/wkhtmltopdf'  # تعديل المسار حسب نظامك
-config = pdfkit.configuration(wkhtmltopdf=path_wkhtmltopdf)
 
 # إعداد تسجيل الأخطاء
 logging.basicConfig(
@@ -16,70 +12,80 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# إنشاء مثيل للمترجم
 translator = Translator()
 
 def start(update: Update, context: CallbackContext):
-    update.message.reply_text("مرحباً، أرسل لي ملف HTML لأقوم بترجمته من الإنجليزية إلى العربية وتحويله لـ PDF.")
+    update.message.reply_text(
+        "مرحباً، أرسل لي ملف HTML لأقوم بترجمته من الإنجليزية إلى العربية وتحويله إلى PDF."
+    )
 
 def translate_html(file_path: str) -> str:
-    """ترجمة محتوى HTML مع الحفاظ على الهيكل"""
+    """
+    تقرأ الملف، تقوم بتحليل الـ HTML وترجمة النصوص من الإنجليزية إلى العربية.
+    """
     with open(file_path, 'r', encoding='utf-8') as f:
         html = f.read()
     soup = BeautifulSoup(html, 'html.parser')
     
+    # المرور على جميع العقد النصية وترجمتها
     for element in soup.find_all(text=True):
-        if element.parent.name not in ['script', 'style'] and element.strip():
+        original_text = element.strip()
+        if original_text:
             try:
-                translated = translator.translate(element, src='en', dest='ar').text
-                element.replace_with(translated)
+                # ترجمة النص من الإنجليزية إلى العربية
+                translated_text = translator.translate(original_text, src='en', dest='ar').text
+                element.replace_with(translated_text)
             except Exception as e:
-                logger.error(f"خطأ في الترجمة: {e}")
-                continue
+                logger.error(f"حدث خطأ أثناء الترجمة: {e}")
     return str(soup)
 
 def handle_file(update: Update, context: CallbackContext):
-    if update.message.document.file_name.endswith('.html'):
+    document = update.message.document
+    if document and document.file_name.endswith('.html'):
+        # تحميل الملف
+        file_id = document.file_id
+        new_file = context.bot.get_file(file_id)
+        original_file_path = document.file_name
+        new_file.download(custom_path=original_file_path)
+        logger.info("تم تحميل الملف إلى %s", original_file_path)
+        
+        # ترجمة محتوى HTML
+        translated_html = translate_html(original_file_path)
+        
+        # حفظ الملف المترجم كملف HTML مؤقت
+        temp_translated_html_path = f"translated_{original_file_path}"
+        with open(temp_translated_html_path, 'w', encoding='utf-8') as f:
+            f.write(translated_html)
+            
+        # تحويل الملف المترجم من HTML إلى PDF باستخدام pdfkit
+        base_name = os.path.splitext(original_file_path)[0]
+        translated_pdf_path = f"translated_{base_name}.pdf"
         try:
-            # تنزيل الملف
-            file_id = update.message.document.file_id
-            downloaded_file = context.bot.get_file(file_id)
-            original_path = 'temp.html'
-            downloaded_file.download(original_path)
-            
-            # ترجمة المحتوى
-            translated_html_content = translate_html(original_path)
-            
-            # حفظ HTML المترجم مؤقتاً
-            translated_html_path = 'translated.html'
-            with open(translated_html_path, 'w', encoding='utf-8') as f:
-                f.write(translated_html_content)
-            
-            # تحويل إلى PDF
-            pdf_path = 'output.pdf'
-            pdfkit.from_file(
-                translated_html_path,
-                pdf_path,
-                configuration=config,
-                options={'encoding': 'UTF-8'}
-            )
-            
-            # إرسال PDF
-            with open(pdf_path, 'rb') as f:
-                update.message.reply_document(document=f)
-            
-            # تنظيف الملفات المؤقتة
-            for path in [original_path, translated_html_path, pdf_path]:
-                if os.path.exists(path):
-                    os.remove(path)
-                    
+            pdfkit.from_file(temp_translated_html_path, translated_pdf_path)
         except Exception as e:
-            logger.error(f"خطأ رئيسي: {e}")
-            update.message.reply_text("حدث خطأ أثناء المعالجة. يرجى المحاولة لاحقاً.")
+            update.message.reply_text(f"حدث خطأ أثناء تحويل HTML إلى PDF: {e}")
+            os.remove(original_file_path)
+            os.remove(temp_translated_html_path)
+            return
+        
+        # إرسال ملف PDF المترجم إلى المستخدم
+        context.bot.send_document(
+            chat_id=update.message.chat_id, 
+            document=open(translated_pdf_path, 'rb')
+        )
+        
+        # حذف الملفات المؤقتة
+        os.remove(original_file_path)
+        os.remove(temp_translated_html_path)
+        os.remove(translated_pdf_path)
     else:
-        update.message.reply_text("❗ يرجى إرسال ملف HTML صالح (امتداد .html)")
+        update.message.reply_text("يرجى إرسال ملف بصيغة HTML فقط.")
 
 def main():
+    # ضع هنا توكن البوت الخاص بك
     token = "6334414905:AAGdBEBDfiY7W9Nhyml1wHxSelo8gfpENR8"
+    
     updater = Updater(token, use_context=True)
     dp = updater.dispatcher
     

@@ -1,4 +1,4 @@
 python-telegram-bot
-googletrans4
+googletrans4==3.1.0a0
 beautifulsoup4
 WeasyPrint

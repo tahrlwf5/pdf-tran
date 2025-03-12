@@ -1,80 +1,93 @@
 import os
-import pdfkit
-import tempfile
-import subprocess
-from flask import Flask, request
-from telegram import Bot, Update
-from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters, CallbackContext
-from deep_translator import GoogleTranslator
+import logging
+from telegram import Update, InputFile
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 from bs4 import BeautifulSoup
+from googletrans import Translator
 
-TOKEN = os.getenv("6334414905:AAGdBEBDfiY7W9Nhyml1wHxSelo8gfpENR8")
-PORT = int(os.environ.get("PORT", 8080))
+# إعداد تسجيل الأخطاء
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
-bot = Bot(token=TOKEN)
-app = Flask(__name__)
-dispatcher = Dispatcher(bot, None, workers=0)
-
-def translate_html(html_content):
-    soup = BeautifulSoup(html_content, "html.parser")
-    for tag in soup.find_all(string=True):
-        if tag.parent.name not in ["script", "style"]:
-            tag.replace_with(GoogleTranslator(source="en", target="ar").translate(tag))
-    return str(soup)
-
-def handle_html(update: Update, context: CallbackContext):
-    file = context.bot.get_file(update.message.document.file_id)
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as temp_html:
-        file.download(temp_html.name)
-        with open(temp_html.name, "r", encoding="utf-8") as f:
-            html_content = f.read()
-        
-        translated_html = translate_html(html_content)
-        translated_file = temp_html.name.replace(".html", "_translated.html")
-        with open(translated_file, "w", encoding="utf-8") as f:
-            f.write(translated_html)
-
-        context.bot.send_document(update.message.chat_id, document=open(translated_file, "rb"))
-        os.remove(translated_file)
-
-def handle_pdf(update: Update, context: CallbackContext):
-    file = context.bot.get_file(update.message.document.file_id)
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
-        file.download(temp_pdf.name)
-        html_output = temp_pdf.name.replace(".pdf", ".html")
-        subprocess.run(["pdf2htmlEX", "--zoom", "1.3", temp_pdf.name, html_output])
-
-        with open(html_output, "r", encoding="utf-8") as f:
-            html_content = f.read()
-        
-        translated_html = translate_html(html_content)
-        translated_html_file = html_output.replace(".html", "_translated.html")
-        with open(translated_html_file, "w", encoding="utf-8") as f:
-            f.write(translated_html)
-
-        pdf_output = translated_html_file.replace(".html", "_translated.pdf")
-        pdfkit.from_file(translated_html_file, pdf_output)
-
-        context.bot.send_document(update.message.chat_id, document=open(pdf_output, "rb"))
-
-        os.remove(temp_pdf.name)
-        os.remove(html_output)
-        os.remove(translated_html_file)
-        os.remove(pdf_output)
+# إنشاء مثيل للمترجم
+translator = Translator()
 
 def start(update: Update, context: CallbackContext):
-    update.message.reply_text("مرحبًا! أرسل لي ملف HTML أو PDF لترجمته إلى العربية.")
+    update.message.reply_text("مرحباً، أرسل لي ملف HTML لأقوم بترجمته من الإنجليزية إلى العربية.")
 
-dispatcher.add_handler(CommandHandler("start", start))
-dispatcher.add_handler(MessageHandler(Filters.document.mime_type("text/html"), handle_html))
-dispatcher.add_handler(MessageHandler(Filters.document.mime_type("application/pdf"), handle_pdf))
+def translate_html(file_path: str) -> str:
+    """
+    تقرأ الملف، تقوم بتحليل الـ HTML وترجمة النصوص من الإنجليزية إلى العربية.
+    """
+    with open(file_path, 'r', encoding='utf-8') as f:
+        html = f.read()
+    soup = BeautifulSoup(html, 'html.parser')
+    
+    # المرور على جميع العقد النصية وترجمتها
+    for element in soup.find_all(text=True):
+        original_text = element.strip()
+        if original_text:
+            try:
+                # ترجمة النص من الإنجليزية إلى العربية
+                translated_text = translator.translate(original_text, src='en', dest='ar').text
+                element.replace_with(translated_text)
+            except Exception as e:
+                logger.error(f"حدث خطأ أثناء الترجمة: {e}")
+    
+    # إضافة رسالة في نهاية الملف
+    additional_message = "<p style='color: red; font-weight: bold;'>قم بتحويل هذا ملف الى البوت الرئيسي لكي يتحول الى pdf @i2pdfbot</p>"
+    # يمكن إضافة الرسالة داخل <body>، مثلاً في نهاية الملف:
+    if soup.body:
+        soup.body.append(BeautifulSoup(additional_message, "html.parser"))
+    else:
+        # إذا لم يكن هناك <body>، نضيف الرسالة في نهاية الملف
+        soup.append(BeautifulSoup(additional_message, "html.parser"))
+        
+    return str(soup)
 
-@app.route(f"/{TOKEN}", methods=["POST"])
-def webhook():
-    update = Update.de_json(request.get_json(), bot)
-    dispatcher.process_update(update)
-    return "OK", 200
+def handle_file(update: Update, context: CallbackContext):
+    document = update.message.document
+    if document and document.file_name.endswith('.html'):
+        file_id = document.file_id
+        new_file = context.bot.get_file(file_id)
+        original_file_path = document.file_name
+        new_file.download(custom_path=original_file_path)
+        logger.info("تم تحميل الملف إلى %s", original_file_path)
+        
+        # ترجمة محتوى HTML وإضافة الرسالة في النهاية
+        translated_html = translate_html(original_file_path)
+        
+        # حفظ الملف المترجم
+        translated_file_path = f"translated_{original_file_path}"
+        with open(translated_file_path, 'w', encoding='utf-8') as f:
+            f.write(translated_html)
+            
+        # إرسال الملف المترجم إلى المستخدم
+        context.bot.send_document(
+            chat_id=update.message.chat_id, 
+            document=open(translated_file_path, 'rb')
+        )
+        
+        # حذف الملفات المؤقتة
+        os.remove(original_file_path)
+        os.remove(translated_file_path)
+    else:
+        update.message.reply_text("يرجى إرسال ملف بصيغة HTML فقط.")
 
-if __name__ == "__main__":
-    bot.setWebhook(f"https://your-railway-app-url/{TOKEN}")
-    app.run(host="0.0.0.0", port=PORT)
+def main():
+    # ضع هنا توكن البوت الخاص بك
+    token = "6334414905:AAGdBEBDfiY7W9Nhyml1wHxSelo8gfpENR8"
+    
+    updater = Updater(token, use_context=True)
+    dp = updater.dispatcher
+    
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(MessageHandler(Filters.document, handle_file))
+    
+    updater.start_polling()
+    updater.idle()
+
+if __name__ == '__main__':
+    main()

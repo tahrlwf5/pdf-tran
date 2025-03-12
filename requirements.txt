@@ -1,7 +1,4 @@
 python-telegram-bot==20.0
-pdf2docx
-python-docx
-deep-translator
-beautifulsoup4
 pdfkit
-wkhtmltopdf
+beautifulsoup4
+deep-translator

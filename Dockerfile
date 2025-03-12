@@ -1,18 +1,23 @@
-# استخدم صورة رسمية مبنية على Python (مثلاً Python 3.9-slim)
-FROM python:3.9-slim
+FROM ubuntu:20.04
 
-# تحديث الحزم وتثبيت pdf2htmlEX مع تبعياته
+# تحديث النظام وتثبيت التبعيات الأساسية
 RUN apt-get update && apt-get install -y \
-    pdf2htmlEX \
+    software-properties-common \
+    && add-apt-repository ppa:pdf2htmlex/ppa \
+    && apt-get update \
+    && apt-get install -y pdf2htmlEX \
     && rm -rf /var/lib/apt/lists/*
 
-# نسخ ملف المتطلبات وتثبيت مكتبات البايثون
-COPY requirements.txt /app/requirements.txt
+# تثبيت Python والأدوات اللازمة
+RUN apt-get install -y python3 python3-pip
+
+# ضبط بيئة العمل
 WORKDIR /app
+
+# نسخ المتطلبات وتثبيت المكتبات
+COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-# نسخ باقي ملفات المشروع
+# نسخ الكود وتشغيل البوت
 COPY . /app
-
-# تشغيل البوت عند بدء الحاوية
-CMD ["python", "main.py"]
+CMD ["python3", "main.py"]

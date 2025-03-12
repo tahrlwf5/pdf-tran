@@ -1,4 +1,4 @@
-python-telegram-bot==13.15 
-beautifulsoup4 
-googletrans==4.0.0-rc1
-pypdf2htmlex
+python-telegram-bot 
+googletrans==4.0.0-rc1 
+pdfminer.six 
+pdf2htmlEX

@@ -1,4 +1,4 @@
-python-telegram-bot==20.0
-pdfkit
+python-telegram-bot
+googletrans4
 beautifulsoup4
-deep-translator
+WeasyPrint

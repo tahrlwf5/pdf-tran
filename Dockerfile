@@ -11,11 +11,12 @@ RUN apt-get update && apt-get install -y \
     libopenjp2-7-dev \
     libpng-dev \
     libtiff-dev \
+    pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 # تنزيل وتثبيت pdf2htmlEX من المصدر
-RUN git clone https://github.com/coolwanglu/pdf2htmlEX.git /tmp/pdf2htmlEX \
-    && mkdir /tmp/pdf2htmlEX/build \
+RUN git clone --depth 1 --branch master https://github.com/coolwanglu/pdf2htmlEX.git /tmp/pdf2htmlEX \
+    && mkdir -p /tmp/pdf2htmlEX/build \
     && cd /tmp/pdf2htmlEX/build \
     && cmake .. \
     && make \

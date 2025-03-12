@@ -1,5 +1,4 @@
-python-telegram-bot==20.0
-pdf2docx
-python-docx
-deep-translator
-lxml
+python-telegram-bot 
+beautifulsoup4 
+googletrans==4.0.0-rc1 
+pdfkit

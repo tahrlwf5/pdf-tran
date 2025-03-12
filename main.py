@@ -1,99 +1,80 @@
-import telegram
-from telegram.ext import Updater, CommandHandler, MessageHandler, filters
-from googletrans import Translator
-from bs4 import BeautifulSoup
-import subprocess
 import os
-import weasyprint
+import pdfkit
+import tempfile
+import subprocess
+from telegram import Update
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from deep_translator import GoogleTranslator
+from bs4 import BeautifulSoup
 
-# استبدل 'YOUR_TELEGRAM_BOT_TOKEN' برمز API الخاص ببوتك
-TOKEN = '6334414905:AAGdBEBDfiY7W9Nhyml1wHxSelo8gfpENR8'
+TOKEN = "6334414905:AAGdBEBDfiY7W9Nhyml1wHxSelo8gfpENR8"
 
-def start(update, context):
-    context.bot.send_message(chat_id=update.effective_chat.id, text="أرسل لي ملف HTML أو PDF لترجمته.")
+def translate_html(html_content):
+    """ترجمة محتوى HTML من الإنجليزية إلى العربية مع الحفاظ على التصميم."""
+    soup = BeautifulSoup(html_content, "html.parser")
+    for tag in soup.find_all(string=True):
+        if tag.parent.name not in ["script", "style"]:
+            tag.replace_with(GoogleTranslator(source="en", target="ar").translate(tag))
+    return str(soup)
 
-def translate_html(update, context):
-    file_id = update.message.document.file_id
-    file_info = context.bot.get_file(file_id)
-    downloaded_file = context.bot.download_file(file_info.file_path)
-    file_name = "input.html"
-    with open(file_name, "wb") as f:
-        f.write(downloaded_file)
+def handle_html(update: Update, context: CallbackContext):
+    """استقبال ملفات HTML، ترجمتها، وإرسالها للمستخدم."""
+    file = context.bot.get_file(update.message.document.file_id)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as temp_html:
+        file.download(temp_html.name)
+        with open(temp_html.name, "r", encoding="utf-8") as f:
+            html_content = f.read()
+        
+        translated_html = translate_html(html_content)
 
-    with open(file_name, 'r', encoding='utf-8') as f:
-        soup = BeautifulSoup(f, 'html.parser')
+        translated_file = temp_html.name.replace(".html", "_translated.html")
+        with open(translated_file, "w", encoding="utf-8") as f:
+            f.write(translated_html)
 
-    translator = Translator()
-    for text in soup.find_all(text=True):
-        if text.strip():
-            try:
-                translated_text = translator.translate(text, dest='ar').text
-                text.replace_with(translated_text)
-            except Exception as e:
-                print(f"Translation error: {e}")
+        context.bot.send_document(update.message.chat_id, document=open(translated_file, "rb"))
+        os.remove(translated_file)
 
-    output_file_name = "translated.html"
-    with open(output_file_name, 'w', encoding='utf-8') as f:
-        f.write(str(soup))
+def handle_pdf(update: Update, context: CallbackContext):
+    """استقبال ملفات PDF، تحويلها إلى HTML، ترجمتها، ثم تحويلها إلى PDF وإرسالها للمستخدم."""
+    file = context.bot.get_file(update.message.document.file_id)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
+        file.download(temp_pdf.name)
+        html_output = temp_pdf.name.replace(".pdf", ".html")
 
-    # Convert HTML to PDF
-    pdf_file_name = "translated.pdf"
-    weasyprint.HTML(output_file_name).write_pdf(pdf_file_name)
+        subprocess.run(["pdf2htmlEX", "--zoom", "1.3", temp_pdf.name, html_output])
 
-    context.bot.send_document(chat_id=update.effective_chat.id, document=open(pdf_file_name, 'rb'))
-    os.remove(file_name)
-    os.remove(output_file_name)
-    os.remove(pdf_file_name)
+        with open(html_output, "r", encoding="utf-8") as f:
+            html_content = f.read()
 
-def translate_pdf(update, context):
-    file_id = update.message.document.file_id
-    file_info = context.bot.get_file(file_id)
-    downloaded_file = context.bot.download_file(file_info.file_path)
-    pdf_file_name = "input.pdf"
-    with open(pdf_file_name, "wb") as f:
-        f.write(downloaded_file)
+        translated_html = translate_html(html_content)
 
-    # Convert PDF to HTML
-    html_file_name = "output.html"
-    subprocess.run(["pdf2htmlEX", pdf_file_name, html_file_name])
+        translated_html_file = html_output.replace(".html", "_translated.html")
+        with open(translated_html_file, "w", encoding="utf-8") as f:
+            f.write(translated_html)
 
-    # Translate HTML
-    with open(html_file_name, 'r', encoding='utf-8') as f:
-        soup = BeautifulSoup(f, 'html.parser')
+        pdf_output = translated_html_file.replace(".html", "_translated.pdf")
+        pdfkit.from_file(translated_html_file, pdf_output)
 
-    translator = Translator()
-    for text in soup.find_all(text=True):
-        if text.strip():
-            try:
-                translated_text = translator.translate(text, dest='ar').text
-                text.replace_with(translated_text)
-            except Exception as e:
-                print(f"Translation error: {e}")
+        context.bot.send_document(update.message.chat_id, document=open(pdf_output, "rb"))
 
-    translated_html_file_name = "translated.html"
-    with open(translated_html_file_name, 'w', encoding='utf-8') as f:
-        f.write(str(soup))
+        os.remove(temp_pdf.name)
+        os.remove(html_output)
+        os.remove(translated_html_file)
+        os.remove(pdf_output)
 
-    # Convert translated HTML to PDF
-    output_pdf_file_name = "translated.pdf"
-    weasyprint.HTML(translated_html_file_name).write_pdf(output_pdf_file_name)
-
-    context.bot.send_document(chat_id=update.effective_chat.id, document=open(output_pdf_file_name, 'rb'))
-    os.remove(pdf_file_name)
-    os.remove(html_file_name)
-    os.remove(translated_html_file_name)
-    os.remove(output_pdf_file_name)
+def start(update: Update, context: CallbackContext):
+    update.message.reply_text("مرحبًا! أرسل لي ملف HTML أو PDF لترجمته إلى العربية.")
 
 def main():
     updater = Updater(TOKEN, use_context=True)
     dp = updater.dispatcher
 
     dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(MessageHandler(filters.Document.mime_type("text/html"), translate_html))
-    dp.add_handler(MessageHandler(filters.Document.mime_type("application/pdf"), translate_pdf))
+    dp.add_handler(MessageHandler(Filters.document.mime_type("text/html"), handle_html))
+    dp.add_handler(MessageHandler(Filters.document.mime_type("application/pdf"), handle_pdf))
 
     updater.start_polling()
     updater.idle()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

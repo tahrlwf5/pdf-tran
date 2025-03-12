@@ -1,4 +1,6 @@
-python-telegram-bot
-googletrans
-beautifulsoup4
-WeasyPrint
+python-telegram-bot 
+deep-translator 
+beautifulsoup4 
+pdfkit
+pdf2htmlEX 
+wkhtmltopdf

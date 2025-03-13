@@ -11,13 +11,15 @@ from telegram.ext import (
 
 # إعدادات API
 API_KEY = "8w1h7uM6OoOWw5Lidqf1FJU0r5ZBzHRo"
-API_URL = "https://api.mconverter.eu/convert"  # تأكد من الرابط حسب وثائق الموقع
+API_URL = "https://api.mconverter.eu/convert"
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # التحقق من أن الملف DOCX
+    # التحقق من أن الملف DOCX (بالـ MIME type أو الامتداد)
     document = update.message.document
-    if not (document.mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" 
-            or document.file_name.endswith('.docx')):
+    if not (
+        document.mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" 
+        or document.file_name.lower().endswith('.docx')
+    ):
         await update.message.reply_text("❌ يُرجى إرسال ملف DOCX صالح.")
         return
 
@@ -27,7 +29,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # تنزيل الملف
             file = await document.get_file()
             docx_path = os.path.join(tmp_dir, "input.docx")
-            await file.download_to_destination(docx_path)  # الطريقة الصحيحة في الإصدارات الحديثة
+            await file.download_to_drive(docx_path)  # التصحيح هنا: download_to_drive()
             
             # إرسال الطلب إلى API
             with open(docx_path, 'rb') as f:
@@ -54,11 +56,8 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"❌ خطأ غير متوقع: {str(e)}")
 
 if __name__ == "__main__":
-    TOKEN = "6016945663:AAFqyBCgCguvPzjHDzVNubNH1VCGT7c1j34"  # استبدل بتوكن البوت الخاص بك
+    TOKEN = "6016945663:AAFqyBCgCguvPzjHDzVNubNH1VCGT7c1j34"
     app = Application.builder().token(TOKEN).build()
-    
-    # إضافة Handler للملفات
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
-    
     print("✅ البوت يعمل...")
     app.run_polling()

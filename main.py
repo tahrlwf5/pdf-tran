@@ -1,89 +1,83 @@
-import logging
 import os
+import logging
 from telegram import Update, InputFile
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 from bs4 import BeautifulSoup
 from googletrans import Translator
 
-# إعداد تسجيل الأحداث
+# إعداد تسجيل الأخطاء
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# ضع هنا توكن البوت الخاص بك
-TOKEN = "6016945663:AAHjacRdRfZ2vUgS2SLmoFgHfMdUye4l6bA"
+# إنشاء مثيل للمترجم
+translator = Translator()
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "مرحباً! أرسل لي ملف HTML باللغة الإنجليزية وسأقوم بترجمته إلى العربية."
-    )
+def start(update: Update, context: CallbackContext):
+    update.message.reply_text("مرحباً، أرسل لي ملف HTML لأقوم بترجمته من الإنجليزية إلى العربية.")
 
-async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    document = update.message.document
-
-    # التحقق من نوع الملف (يجب أن يكون ملف HTML)
-    if document.mime_type != "text/html":
-        await update.message.reply_text("الرجاء إرسال ملف HTML فقط.")
-        return
-
-    file_id = document.file_id
-    new_file = await context.bot.get_file(file_id)
+def translate_html(file_path: str) -> str:
+    """
+    تقرأ الملف، تقوم بتحليل الـ HTML وترجمة النصوص من الإنجليزية إلى العربية.
+    """
+    with open(file_path, 'r', encoding='utf-8') as f:
+        html = f.read()
+    soup = BeautifulSoup(html, 'html.parser')
     
-    # إنشاء مجلد التحميلات إذا لم يكن موجوداً
-    os.makedirs("downloads", exist_ok=True)
-    file_path = os.path.join("downloads", document.file_name)
-    
-    # تحميل الملف إلى المسار المحدد باستخدام المعامل custom_path
-    await new_file.download_to_drive(custom_path=file_path)
-    await update.message.reply_text("تم تحميل الملف، جاري الترجمة...")
-
-    # قراءة محتوى الملف
-    with open(file_path, "r", encoding="utf-8") as f:
-        html_content = f.read()
-
-    # تحليل محتوى HTML باستخدام BeautifulSoup
-    soup = BeautifulSoup(html_content, "html.parser")
-    translator = Translator()
-
-    # ترجمة النصوص في عناصر HTML مع تجاهل وسوم script و style
+    # المرور على جميع العقد النصية وترجمتها
     for element in soup.find_all(text=True):
-        if element.parent.name in ["script", "style"]:
-            continue
-        text = element.strip()
-        if text:
+        original_text = element.strip()
+        if original_text:
             try:
-                translation = translator.translate(text, src="en", dest="ar")
-                element.replace_with(translation.text)
+                # ترجمة النص من الإنجليزية إلى العربية
+                translated_text = translator.translate(original_text, src='en', dest='ar').text
+                element.replace_with(translated_text)
             except Exception as e:
-                logger.error(f"خطأ في الترجمة: {e}")
+                logger.error(f"حدث خطأ أثناء الترجمة: {e}")
+    return str(soup)
 
-    translated_html = str(soup)
-    output_path = os.path.join("downloads", f"translated_{document.file_name}")
-    
-    # حفظ الملف المترجم
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(translated_html)
-
-    # إرسال الملف المترجم للمستخدم
-    with open(output_path, "rb") as f:
-        await update.message.reply_document(
-            document=InputFile(f, filename=f"translated_{document.file_name}")
+def handle_file(update: Update, context: CallbackContext):
+    document = update.message.document
+    if document and document.file_name.endswith('.html'):
+        file_id = document.file_id
+        new_file = context.bot.get_file(file_id)
+        original_file_path = document.file_name
+        new_file.download(custom_path=original_file_path)
+        logger.info("تم تحميل الملف إلى %s", original_file_path)
+        
+        # ترجمة محتوى HTML
+        translated_html = translate_html(original_file_path)
+        
+        # حفظ الملف المترجم
+        translated_file_path = f"translated_{original_file_path}"
+        with open(translated_file_path, 'w', encoding='utf-8') as f:
+            f.write(translated_html)
+            
+        # إرسال الملف المترجم إلى المستخدم
+        context.bot.send_document(
+            chat_id=update.message.chat_id, 
+            document=open(translated_file_path, 'rb')
         )
-    
-    await update.message.reply_text("تم الترجمة وإرسال الملف المترجم.")
-    
-    # حذف الملفات المؤقتة (اختياري)
-    os.remove(file_path)
-    os.remove(output_path)
+        
+        # حذف الملفات المؤقتة
+        os.remove(original_file_path)
+        os.remove(translated_file_path)
+    else:
+        update.message.reply_text("يرجى إرسال ملف بصيغة HTML فقط.")
 
-async def main():
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
-    await app.run_polling()
+def main():
+    # ضع هنا توكن البوت الخاص بك
+    token = "6016945663:AAHjacRdRfZ2vUgS2SLmoFgHfMdUye4l6bA"
+    
+    updater = Updater(token, use_context=True)
+    dp = updater.dispatcher
+    
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(MessageHandler(Filters.document, handle_file))
+    
+    updater.start_polling()
+    updater.idle()
 
 if __name__ == '__main__':
-    import asyncio
-    asyncio.run(main())
+    main()

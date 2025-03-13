@@ -1,83 +1,97 @@
+import os
 import logging
-from telegram import Update, InputFile
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import requests
+import asyncio
+from telegram import Update
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
+)
 
-# Config
-API_SECRET = "secret_27IPh66mBqBmKUkN"  # استبدل بمفتاح API الخاص بك
-TOKEN = "6016945663:AAFqyBCgCguvPzjHDzVNubNH1VCGT7c1j34"  # استبدل بتوكن البوت الخاص بك
+# ضع هنا توكن بوت التليجرام الخاص بك
+TELEGRAM_TOKEN = "6016945663:AAFqyBCgCguvPzjHDzVNubNH1VCGT7c1j34"
 
-# Logging
+# API Secret من ConvertAPI
+CONVERTAPI_SECRET = "secret_27IPh66mBqBmKUkN"
+
+# تهيئة logging
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("مرحبًا! أرسل ملف PDF أو DOCX لتحويله إلى HTML.")
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(
+        "مرحباً! أرسل لي ملف PDF أو DOCX وسأقوم بتحويله إلى HTML باستخدام convertapi.com."
+    )
 
-async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message.document:
+async def convert_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    document = update.message.document
+    file_name = document.file_name.lower()
+
+    if not (file_name.endswith('.pdf') or file_name.endswith('.docx')):
+        await update.message.reply_text("يرجى إرسال ملف PDF أو DOCX فقط.")
         return
-    
-    doc = update.message.document
-    filename = doc.file_name or ""
 
-    if not (filename.endswith('.pdf') or filename.endswith('.docx')):
-        await update.message.reply_text("❗ الملف يجب أن يكون PDF أو DOCX!")
-        return
+    # تحميل الملف من تليجرام
+    file = await document.get_file()
+    os.makedirs("downloads", exist_ok=True)
+    local_path = os.path.join("downloads", file_name)
+    await file.download_to_drive(custom_path=local_path)
+    await update.message.reply_text("تم استلام الملف، جارٍ تحويله إلى HTML...")
 
+    # تحديد نوع التحويل بناءً على امتداد الملف
+    convert_type = "pdf" if file_name.endswith('.pdf') else "docx"
+
+    # استدعاء الدالة التحويل (بلوغ عمليات التحويل قد تكون متزامنة)
+    html_file_path = convert_file(local_path, convert_type)
+    if html_file_path:
+        await update.message.reply_text("تم التحويل بنجاح، يتم إرسال الملف...")
+        with open(html_file_path, 'rb') as html_file:
+            await update.message.reply_document(document=html_file)
+    else:
+        await update.message.reply_text("حدث خطأ أثناء عملية التحويل. يرجى المحاولة لاحقاً.")
+
+def convert_file(file_path: str, convert_type: str) -> str:
+    """
+    ترسل هذه الدالة الملف إلى ConvertAPI لتحويله إلى HTML.
+    """
+    url = f"https://v2.convertapi.com/convert/{convert_type}/to/html?Secret={CONVERTAPI_SECRET}"
     try:
-        # تنزيل الملف
-        file = await doc.get_file()
-        content = await file.download_as_bytearray()
-
-        # تحويل الصيغة
-        convert_format = "pdf" if filename.endswith('.pdf') else "docx"
-        api_url = f"https://v2.convertapi.com/convert/{convert_format}/to/html?Secret={API_SECRET}"
-        
-        response = requests.post(
-            api_url,
-            files={"File": (filename, bytes(content))}
-        )
-        response.raise_for_status()
-
-        # معالجة الرد
-        result = response.json()
-        print(result)  # طباعة الاستجابة للتشخيص
-
-        if not result.get('Files'):
-            await update.message.reply_text("❌ فشل التحويل: لم يتم إنشاء ملف ناتج.")
-            return
-
-        if not result['Files'][0].get('Url'):
-            await update.message.reply_text("❌ فشل التحويل: لم يتم العثور على رابط الملف الناتج.")
-            return
-
-        # تنزيل HTML الناتج
-        html_url = result['Files'][0]['Url']
-        html_response = requests.get(html_url)
-        html_response.raise_for_status()
-
-        # إرسال النتيجة
-        await update.message.reply_document(
-            document=InputFile(html_response.content, filename="converted.html"),
-            caption="✅ تم التحويل بنجاح!"
-        )
-
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Request Error: {e}")
-        await update.message.reply_text("❌ حدث خطأ أثناء الاتصال بـ convertapi.com.")
-    except KeyError as e:
-        logger.error(f"KeyError: {e}")
-        await update.message.reply_text("❌ فشل التحويل: استجابة غير متوقعة من convertapi.com.")
+        with open(file_path, 'rb') as f:
+            files = {'File': f}
+            response = requests.post(url, files=files)
+        if response.status_code == 200:
+            result = response.json()
+            # نتوقع أن يكون هناك مفتاح 'Files' يحتوي على قائمة الملفات الناتجة
+            file_url = result['Files'][0]['Url']
+            # تحميل الملف الناتج
+            html_response = requests.get(file_url)
+            output_file = file_path.rsplit('.', 1)[0] + '.html'
+            with open(output_file, 'wb') as f:
+                f.write(html_response.content)
+            return output_file
+        else:
+            logger.error("خطأ في التحويل: %s", response.text)
+            return None
     except Exception as e:
-        logger.error(f"Unexpected Error: {e}")
-        await update.message.reply_text("❌ حدث خطأ غير متوقع.")
+        logger.exception("Exception during file conversion:")
+        return None
 
-if __name__ == "__main__":
-    app = Application.builder().token(TOKEN).build()
+async def main() -> None:
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
-    app.run_polling(drop_pending_updates=True)
+    app.add_handler(MessageHandler(filters.Document.ALL, convert_document))
+
+    # بدء البوت باستخدام polling
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+    await app.updater.idle()
+
+if __name__ == '__main__':
+    asyncio.run(main())

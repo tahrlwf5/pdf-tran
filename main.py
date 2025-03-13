@@ -1,7 +1,6 @@
 import os
 import logging
 import requests
-import asyncio
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -40,13 +39,13 @@ async def convert_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     file = await document.get_file()
     os.makedirs("downloads", exist_ok=True)
     local_path = os.path.join("downloads", file_name)
-    await file.download_to_drive(custom_path=local_path)
+    await file.download_to_drive(local_path)
     await update.message.reply_text("تم استلام الملف، جارٍ تحويله إلى HTML...")
 
     # تحديد نوع التحويل بناءً على امتداد الملف
     convert_type = "pdf" if file_name.endswith('.pdf') else "docx"
 
-    # استدعاء الدالة التحويل (بلوغ عمليات التحويل قد تكون متزامنة)
+    # استدعاء دالة التحويل
     html_file_path = convert_file(local_path, convert_type)
     if html_file_path:
         await update.message.reply_text("تم التحويل بنجاح، يتم إرسال الملف...")
@@ -66,9 +65,7 @@ def convert_file(file_path: str, convert_type: str) -> str:
             response = requests.post(url, files=files)
         if response.status_code == 200:
             result = response.json()
-            # نتوقع أن يكون هناك مفتاح 'Files' يحتوي على قائمة الملفات الناتجة
             file_url = result['Files'][0]['Url']
-            # تحميل الملف الناتج
             html_response = requests.get(file_url)
             output_file = file_path.rsplit('.', 1)[0] + '.html'
             with open(output_file, 'wb') as f:
@@ -81,17 +78,14 @@ def convert_file(file_path: str, convert_type: str) -> str:
         logger.exception("Exception during file conversion:")
         return None
 
-async def main() -> None:
+def main() -> None:
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.Document.ALL, convert_document))
 
     # بدء البوت باستخدام polling
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling()
-    await app.updater.idle()
+    app.run_polling()
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    main()

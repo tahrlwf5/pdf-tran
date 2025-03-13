@@ -4,7 +4,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 import requests
 
 # Config
-API_SECRET = "secret_27IPh66mBqBmKUkN"
+API_SECRET = "27IPh66mBqBmKUkN"
 TOKEN = "6016945663:AAFqyBCgCguvPzjHDzVNubNH1VCGT7c1j34"  # استبدل به التوكن الخاص بك
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):

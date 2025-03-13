@@ -4,7 +4,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 import requests
 
 # Config
-API_SECRET = "secret_27IPh66mBqBmKUkN"  # استبدل بمفتاح API الخاص بك
+API_SECRET = "27IPh66mBqBmKUkN"  # استبدل بمفتاح API الخاص بك
 TOKEN = "6016945663:AAFqyBCgCguvPzjHDzVNubNH1VCGT7c1j34"  # استبدل بتوكن البوت الخاص بك
 
 # Logging

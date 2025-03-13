@@ -51,7 +51,7 @@ def handle_file(update: Update, context: CallbackContext):
         logger.info("تم تحميل الملف إلى %s", original_file_path)
         
         # إبلاغ المستخدم بأنه جاري ترجمة الملف
-        update.message.reply_text("جاري ترجمة ملفك انتظر بعض دقائق...")
+        update.message.reply_text("⏳ جاري ترجمة ملفك انتظر بعض دقائق...")
         
         # ترجمة محتوى HTML
         translated_html = translate_html(original_file_path)
@@ -79,7 +79,7 @@ def handle_file(update: Update, context: CallbackContext):
 
 def main():
     # ضع هنا توكن البوت الخاص بك
-    token = "6016945663:AAHjacRdRfZ2vUgS2SLmoFgHfMdUye4l6bA"
+    token = "8060810536:AAEaV76YpcZyIxI4Qb_taVMG1ijn8hVYHt0"
     
     updater = Updater(token, use_context=True)
     dp = updater.dispatcher

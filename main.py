@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 translator = Translator()
 
 def start(update: Update, context: CallbackContext):
-    update.message.reply_text("مرحباً، أرسل لي ملف HTML لأقوم بترجمته من الإنجليزية إلى العربية.")
+    update.message.reply_text("مرحباً، أرسل لي ملف HTML لأقوم بترجمته من الإنجليزية إلى العربية.\nالبوت تابع ل @i2pdfbot\n @ta_ja199 للاستفسار")
 
 def translate_html(file_path: str) -> str:
     """
@@ -30,7 +30,6 @@ def translate_html(file_path: str) -> str:
         original_text = element.strip()
         if original_text:
             try:
-                # ترجمة النص من الإنجليزية إلى العربية
                 translated_text = translator.translate(original_text, src='en', dest='ar').text
                 element.replace_with(translated_text)
             except Exception as e:
@@ -39,12 +38,20 @@ def translate_html(file_path: str) -> str:
 
 def handle_file(update: Update, context: CallbackContext):
     document = update.message.document
+    # التأكد من أن الملف بصيغة HTML وحجمه <= 2MB
     if document and document.file_name.endswith('.html'):
+        if document.file_size > 2 * 1024 * 1024:
+            update.message.reply_text("❌ حجم الملف أكبر من 2MB. يرجى إرسال ملف بحجم أصغر.")
+            return
+        
         file_id = document.file_id
         new_file = context.bot.get_file(file_id)
         original_file_path = document.file_name
         new_file.download(custom_path=original_file_path)
         logger.info("تم تحميل الملف إلى %s", original_file_path)
+        
+        # إبلاغ المستخدم بأنه جاري ترجمة الملف
+        update.message.reply_text("جاري ترجمة ملفك انتظر بعض دقائق...")
         
         # ترجمة محتوى HTML
         translated_html = translate_html(original_file_path)
@@ -54,10 +61,14 @@ def handle_file(update: Update, context: CallbackContext):
         with open(translated_file_path, 'w', encoding='utf-8') as f:
             f.write(translated_html)
             
-        # إرسال الملف المترجم إلى المستخدم
+        # إرسال الملف المترجم مع Caption معين
+        caption_text = ("✅ تم الترجمة بنجاح!\n"
+                        "قم بإعادة توجيه هذا الملف للبوت الرئيسي لتحويله إلى PDF: @i2pdfbot \n"
+                        "@ta_ja199 للاستفسار")
         context.bot.send_document(
             chat_id=update.message.chat_id, 
-            document=open(translated_file_path, 'rb')
+            document=open(translated_file_path, 'rb'),
+            caption=caption_text
         )
         
         # حذف الملفات المؤقتة

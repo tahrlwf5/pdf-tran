@@ -1,103 +1,85 @@
-import os
 import logging
-import requests
-from telegram import Update
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
-)
+import os
+from telegram import Update, InputFile
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from bs4 import BeautifulSoup
+from googletrans import Translator
 
-# ضع هنا توكن بوت التليجرام الخاص بك
-TELEGRAM_TOKEN = "6016945663:AAHjacRdRfZ2vUgS2SLmoFgHfMdUye4l6bA"
-
-# API Secret من ConvertAPI
-CONVERTAPI_SECRET = "secret_IeaPYONWS1Xf1Re4"
-
-# تهيئة logging
+# إعداد تسجيل الأحداث
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+# ضع هنا توكن البوت الخاص بك
+TOKEN = "6016945663:AAHjacRdRfZ2vUgS2SLmoFgHfMdUye4l6bA"
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "مرحباً! أرسل لي ملف PDF أو DOCX وسأقوم بتحويله إلى HTML باستخدام convertapi.com."
+        'مرحباً! أرسل لي ملف HTML باللغة الإنجليزية وسأقوم بترجمته إلى العربية.'
     )
 
-async def convert_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     document = update.message.document
-    file_name = document.file_name.lower()
-
-    if not (file_name.endswith('.pdf') or file_name.endswith('.docx')):
-        await update.message.reply_text("❌ يرجى إرسال ملف PDF أو DOCX فقط.")
+    # التحقق من نوع الملف (يجب أن يكون ملف HTML)
+    if document.mime_type != 'text/html':
+        await update.message.reply_text('الرجاء إرسال ملف HTML فقط.')
         return
 
-    # تحميل الملف من تليجرام
-    file = await document.get_file()
-    os.makedirs("downloads", exist_ok=True)
-    local_path = os.path.join("downloads", file_name)
-    await file.download_to_drive(local_path)
-    await update.message.reply_text("📤 تم استلام الملف، جارٍ تحويله إلى HTML...")
-
-    # تحديد نوع التحويل بناءً على امتداد الملف
-    convert_type = "pdf" if file_name.endswith('.pdf') else "docx"
-
-    # استدعاء دالة التحويل
-    html_file_path = convert_file(local_path, convert_type)
-    if html_file_path:
-        await update.message.reply_text("✅ تم التحويل بنجاح، يتم إرسال الملف...")
-        with open(html_file_path, 'rb') as html_file:
-            await update.message.reply_document(document=html_file)
-    else:
-        await update.message.reply_text("⚠️ حدث خطأ أثناء عملية التحويل. تحقق من نوع الملف وحاول مرة أخرى.")
-
-def convert_file(file_path: str, convert_type: str) -> str:
-    """
-    ترسل هذه الدالة الملف إلى ConvertAPI لتحويله إلى HTML.
-    """
-    url = f"https://v2.convertapi.com/convert/{convert_type}/to/html?Secret={CONVERTAPI_SECRET}"
+    file_id = document.file_id
+    new_file = await context.bot.get_file(file_id)
     
-    try:
-        with open(file_path, 'rb') as f:
-            files = {'File': f}
-            response = requests.post(url, files=files)
-        
-        response_json = response.json()
-        
-        # 🛑 طباعة الاستجابة في السجل لمعرفة ما الخطأ
-        logger.info("🔍 ConvertAPI Response: %s", response_json)
+    # إنشاء مجلد لتحميل الملفات إن لم يكن موجوداً
+    os.makedirs("downloads", exist_ok=True)
+    file_path = f"downloads/{document.file_name}"
+    await new_file.download_to_drive(file_path)
+    await update.message.reply_text('تم تحميل الملف، جاري الترجمة...')
 
-        if response.status_code != 200 or "Files" not in response_json:
-            logger.error("🚨 API Error: %s", response_json)
-            return None
-        
-        file_url = response_json["Files"][0].get("Url")
-        if not file_url:
-            logger.error("❌ No URL found in API response: %s", response_json)
-            return None
+    # قراءة محتوى الملف
+    with open(file_path, 'r', encoding='utf-8') as f:
+        html_content = f.read()
 
-        # تحميل ملف HTML
-        html_response = requests.get(file_url)
-        output_file = file_path.rsplit('.', 1)[0] + '.html'
-        with open(output_file, 'wb') as f:
-            f.write(html_response.content)
+    # تحليل محتوى HTML باستخدام BeautifulSoup
+    soup = BeautifulSoup(html_content, 'html.parser')
+    translator = Translator()
 
-        return output_file
-    except Exception as e:
-        logger.exception("Exception during file conversion:")
-        return None
+    # ترجمة النصوص داخل عناصر HTML مع تجاهل الوسوم غير المراد ترجمتها
+    for element in soup.find_all(text=True):
+        if element.parent.name in ['script', 'style']:
+            continue
+        text = element.strip()
+        if text:
+            try:
+                translation = translator.translate(text, src='en', dest='ar')
+                element.replace_with(translation.text)
+            except Exception as e:
+                logger.error(f"خطأ في الترجمة: {e}")
 
-def main() -> None:
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    translated_html = str(soup)
+    output_path = f"downloads/translated_{document.file_name}"
+    # حفظ الملف المترجم
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(translated_html)
+
+    # إرسال الملف المترجم للمستخدم
+    with open(output_path, 'rb') as f:
+        await update.message.reply_document(
+            document=InputFile(f, filename=f"translated_{document.file_name}")
+        )
+
+    await update.message.reply_text('تم الترجمة وإرسال الملف المترجم.')
+    # حذف الملفات المؤقتة (اختياري)
+    os.remove(file_path)
+    os.remove(output_path)
+
+async def main():
+    app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.Document.ALL, convert_document))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 
-    # بدء البوت باستخدام polling
-    app.run_polling()
+    await app.run_polling()
 
 if __name__ == '__main__':
-    main()
+    import asyncio
+    asyncio.run(main())

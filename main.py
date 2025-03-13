@@ -4,8 +4,15 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 import requests
 
 # Config
-API_SECRET = "27IPh66mBqBmKUkN"
-TOKEN = "6016945663:AAFqyBCgCguvPzjHDzVNubNH1VCGT7c1j34"  # استبدل به التوكن الخاص بك
+API_SECRET = "secret_27IPh66mBqBmKUkN"  # استبدل بمفتاح API الخاص بك
+TOKEN = "6016945663:AAFqyBCgCguvPzjHDzVNubNH1VCGT7c1j34"  # استبدل بتوكن البوت الخاص بك
+
+# Logging
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("مرحبًا! أرسل ملف PDF أو DOCX لتحويله إلى HTML.")
@@ -36,22 +43,35 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         response.raise_for_status()
 
-        # إرسال النتيجة
+        # معالجة الرد
         result = response.json()
-        html_url = result["Files"][0]["Url"]
-        html_content = requests.get(html_url).content
+        if not result.get('Files') or not result['Files'][0].get('Url'):
+            await update.message.reply_text("❌ فشل التحويل: لم يتم العثور على ملف ناتج.")
+            return
 
+        # تنزيل HTML الناتج
+        html_url = result['Files'][0]['Url']
+        html_response = requests.get(html_url)
+        html_response.raise_for_status()
+
+        # إرسال النتيجة
         await update.message.reply_document(
-            document=InputFile(html_content, filename="converted.html"),
+            document=InputFile(html_response.content, filename="converted.html"),
             caption="✅ تم التحويل بنجاح!"
         )
 
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Request Error: {e}")
+        await update.message.reply_text("❌ حدث خطأ أثناء الاتصال بـ convertapi.com.")
+    except KeyError as e:
+        logger.error(f"KeyError: {e}")
+        await update.message.reply_text("❌ فشل التحويل: استجابة غير متوقعة من convertapi.com.")
     except Exception as e:
-        logging.error(f"Error: {e}")
-        await update.message.reply_text("❌ حدث خطأ أثناء التحويل!")
+        logger.error(f"Unexpected Error: {e}")
+        await update.message.reply_text("❌ حدث خطأ غير متوقع.")
 
 if __name__ == "__main__":
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)

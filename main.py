@@ -66,15 +66,17 @@ def convert_file(file_path: str, convert_type: str) -> str:
             response = requests.post(url, files=files)
         
         response_json = response.json()
-        logger.info("API Response: %s", response_json)  # طباعة الرد للتحقق من أي خطأ
         
+        # 🛑 طباعة الاستجابة في السجل لمعرفة ما الخطأ
+        logger.info("🔍 ConvertAPI Response: %s", response_json)
+
         if response.status_code != 200 or "Files" not in response_json:
-            logger.error("Error in API Response: %s", response_json)
+            logger.error("🚨 API Error: %s", response_json)
             return None
         
         file_url = response_json["Files"][0].get("Url")
         if not file_url:
-            logger.error("URL not found in response: %s", response_json)
+            logger.error("❌ No URL found in API response: %s", response_json)
             return None
 
         # تحميل ملف HTML

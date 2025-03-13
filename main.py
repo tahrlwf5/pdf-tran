@@ -9,12 +9,11 @@ from telegram.ext import (
     filters
 )
 
-# إعدادات API
+# إعدادات API (تأكد من الرابط والمفتاح!)
 API_KEY = "8w1h7uM6OoOWw5Lidqf1FJU0r5ZBzHRo"
-API_URL = "https://api.mconverter.eu/convert"
+API_URL = "https://api.mconverter.eu/api/convert"  # <-- هنا التعديل
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # التحقق من أن الملف DOCX (بالـ MIME type أو الامتداد)
     document = update.message.document
     if not (
         document.mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" 
@@ -23,13 +22,12 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ يُرجى إرسال ملف DOCX صالح.")
         return
 
-    # إنشاء مجلد مؤقت
     with tempfile.TemporaryDirectory() as tmp_dir:
         try:
             # تنزيل الملف
             file = await document.get_file()
             docx_path = os.path.join(tmp_dir, "input.docx")
-            await file.download_to_drive(docx_path)  # التصحيح هنا: download_to_drive()
+            await file.download_to_drive(docx_path)
             
             # إرسال الطلب إلى API
             with open(docx_path, 'rb') as f:
@@ -39,7 +37,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     data={'apikey': API_KEY, 'outputformat': 'html'}
                 )
             
-            # معالجة الاستجابة
             if response.status_code == 200:
                 html_path = os.path.join(tmp_dir, "output.html")
                 with open(html_path, 'wb') as f:
@@ -50,13 +47,14 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     caption="✅ تم التحويل بنجاح!"
                 )
             else:
-                await update.message.reply_text(f"❌ فشل التحويل: {response.text}")
+                await update.message.reply_text(f"❌ فشل التحويل (كود {response.status_code}): {response.text}")
         
         except Exception as e:
             await update.message.reply_text(f"❌ خطأ غير متوقع: {str(e)}")
 
 if __name__ == "__main__":
-    TOKEN = "6016945663:AAFqyBCgCguvPzjHDzVNubNH1VCGT7c1j34"
+    # التوكن الخاص بالبوت
+    TOKEN = "6016945663:AAFqyBCgCguvPzjHDzVNubNH1VCGT7c1j34"  # <-- التوكن هنا
     app = Application.builder().token(TOKEN).build()
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     print("✅ البوت يعمل...")

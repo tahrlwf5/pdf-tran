@@ -45,8 +45,14 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # معالجة الرد
         result = response.json()
-        if not result.get('Files') or not result['Files'][0].get('Url'):
-            await update.message.reply_text("❌ فشل التحويل: لم يتم العثور على ملف ناتج.")
+        print(result)  # طباعة الاستجابة للتشخيص
+
+        if not result.get('Files'):
+            await update.message.reply_text("❌ فشل التحويل: لم يتم إنشاء ملف ناتج.")
+            return
+
+        if not result['Files'][0].get('Url'):
+            await update.message.reply_text("❌ فشل التحويل: لم يتم العثور على رابط الملف الناتج.")
             return
 
         # تنزيل HTML الناتج

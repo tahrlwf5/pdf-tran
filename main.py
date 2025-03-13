@@ -1,83 +1,64 @@
 import os
-import logging
-from telegram import Update, InputFile
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
-from bs4 import BeautifulSoup
-from googletrans import Translator
-
-# إعداد تسجيل الأخطاء
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
+import tempfile
+import requests
+from telegram import Update
+from telegram.ext import (
+    Application,
+    MessageHandler,
+    ContextTypes,
+    filters
 )
-logger = logging.getLogger(__name__)
 
-# إنشاء مثيل للمترجم
-translator = Translator()
+# إعدادات API
+API_KEY = "8w1h7uM6OoOWw5Lidqf1FJU0r5ZBzHRo"
+API_URL = "https://api.mconverter.eu/convert"  # تأكد من الرابط حسب وثائق الموقع
 
-def start(update: Update, context: CallbackContext):
-    update.message.reply_text("مرحباً، أرسل لي ملف HTML لأقوم بترجمته من الإنجليزية إلى العربية.")
-
-def translate_html(file_path: str) -> str:
-    """
-    تقرأ الملف، تقوم بتحليل الـ HTML وترجمة النصوص من الإنجليزية إلى العربية.
-    """
-    with open(file_path, 'r', encoding='utf-8') as f:
-        html = f.read()
-    soup = BeautifulSoup(html, 'html.parser')
-    
-    # المرور على جميع العقد النصية وترجمتها
-    for element in soup.find_all(text=True):
-        original_text = element.strip()
-        if original_text:
-            try:
-                # ترجمة النص من الإنجليزية إلى العربية
-                translated_text = translator.translate(original_text, src='en', dest='ar').text
-                element.replace_with(translated_text)
-            except Exception as e:
-                logger.error(f"حدث خطأ أثناء الترجمة: {e}")
-    return str(soup)
-
-def handle_file(update: Update, context: CallbackContext):
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # التحقق من أن الملف DOCX
     document = update.message.document
-    if document and document.file_name.endswith('.html'):
-        file_id = document.file_id
-        new_file = context.bot.get_file(file_id)
-        original_file_path = document.file_name
-        new_file.download(custom_path=original_file_path)
-        logger.info("تم تحميل الملف إلى %s", original_file_path)
-        
-        # ترجمة محتوى HTML
-        translated_html = translate_html(original_file_path)
-        
-        # حفظ الملف المترجم
-        translated_file_path = f"translated_{original_file_path}"
-        with open(translated_file_path, 'w', encoding='utf-8') as f:
-            f.write(translated_html)
+    if not (document.mime_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" 
+            or document.file_name.endswith('.docx')):
+        await update.message.reply_text("❌ يُرجى إرسال ملف DOCX صالح.")
+        return
+
+    # إنشاء مجلد مؤقت
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        try:
+            # تنزيل الملف
+            file = await document.get_file()
+            docx_path = os.path.join(tmp_dir, "input.docx")
+            await file.download_to_destination(docx_path)  # الطريقة الصحيحة في الإصدارات الحديثة
             
-        # إرسال الملف المترجم إلى المستخدم
-        context.bot.send_document(
-            chat_id=update.message.chat_id, 
-            document=open(translated_file_path, 'rb')
-        )
+            # إرسال الطلب إلى API
+            with open(docx_path, 'rb') as f:
+                response = requests.post(
+                    API_URL,
+                    files={'file': f},
+                    data={'apikey': API_KEY, 'outputformat': 'html'}
+                )
+            
+            # معالجة الاستجابة
+            if response.status_code == 200:
+                html_path = os.path.join(tmp_dir, "output.html")
+                with open(html_path, 'wb') as f:
+                    f.write(response.content)
+                
+                await update.message.reply_document(
+                    document=html_path,
+                    caption="✅ تم التحويل بنجاح!"
+                )
+            else:
+                await update.message.reply_text(f"❌ فشل التحويل: {response.text}")
         
-        # حذف الملفات المؤقتة
-        os.remove(original_file_path)
-        os.remove(translated_file_path)
-    else:
-        update.message.reply_text("يرجى إرسال ملف بصيغة HTML فقط.")
+        except Exception as e:
+            await update.message.reply_text(f"❌ خطأ غير متوقع: {str(e)}")
 
-def main():
-    # ضع هنا توكن البوت الخاص بك
-    token = "6016945663:AAGTKkACzzy1fRcwth6TUq5gS5uvreNMoEY"
+if __name__ == "__main__":
+    TOKEN = "6016945663:AAFqyBCgCguvPzjHDzVNubNH1VCGT7c1j34"  # استبدل بتوكن البوت الخاص بك
+    app = Application.builder().token(TOKEN).build()
     
-    updater = Updater(token, use_context=True)
-    dp = updater.dispatcher
+    # إضافة Handler للملفات
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(MessageHandler(Filters.document, handle_file))
-    
-    updater.start_polling()
-    updater.idle()
-
-if __name__ == '__main__':
-    main()
+    print("✅ البوت يعمل...")
+    app.run_polling()

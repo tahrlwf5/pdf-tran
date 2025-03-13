@@ -14,7 +14,7 @@ from telegram.ext import (
 TELEGRAM_TOKEN = "6016945663:AAHjacRdRfZ2vUgS2SLmoFgHfMdUye4l6bA"
 
 # API Secret من ConvertAPI
-CONVERTAPI_SECRET = "secret_27IPh66mBqBmKUkN"
+CONVERTAPI_SECRET = "secret_IeaPYONWS1Xf1Re4"
 
 # تهيئة logging
 logging.basicConfig(

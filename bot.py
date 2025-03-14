@@ -1,9 +1,8 @@
 import logging
 import os
-import io
 from lxml import html
-from googletrans import Translator
-from telegram import Update, Bot
+from deep_translator import GoogleTranslator
+from telegram import Update
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
 # إعداد سجل الأخطاء
@@ -13,18 +12,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# التوكن الخاص بالبوت
-TELEGRAM_TOKEN = '5153049530:AAG4LS17jVZdseUnGkodRpHzZxGLOnzc1gs'  # استبدل هذا بالتوكن الخاص بك
+# توكن بوت التليجرام
+TELEGRAM_TOKEN = '5153049530:AAG4LS17jVZdseUnGkodRpHzZxGLOnzc1gs'  # استبدل بالتوكن الخاص بك
 
+# دالة بدء البوت
 def start(update: Update, context: CallbackContext):
     update.message.reply_text(
-        "مرحبًا، أرسل لي ملف HTML وسأقوم بترجمته من الإنجليزية إلى العربية مع الحفاظ على التصميم."
+        "مرحبًا! أرسل لي ملف HTML وسأقوم بترجمته من الإنجليزية إلى العربية مع الحفاظ على التصميم."
     )
 
+# دالة معالجة الملفات
 def handle_document(update: Update, context: CallbackContext):
     document = update.message.document
 
-    # التأكد من أن الملف بامتداد HTML
+    # التأكد من أن الملف بصيغة HTML
     if not document.file_name.lower().endswith('.html'):
         update.message.reply_text("يرجى إرسال ملف HTML فقط.")
         return
@@ -32,7 +33,7 @@ def handle_document(update: Update, context: CallbackContext):
     file_id = document.file_id
     new_file = context.bot.get_file(file_id)
 
-    # إنشاء مجلد للتنزيل إذا لم يكن موجوداً
+    # إنشاء مجلد للتنزيل إذا لم يكن موجودًا
     os.makedirs("downloads", exist_ok=True)
     file_path = os.path.join("downloads", document.file_name)
     new_file.download(file_path)
@@ -42,7 +43,7 @@ def handle_document(update: Update, context: CallbackContext):
         with open(file_path, 'r', encoding='utf-8') as f:
             html_content = f.read()
     except Exception as e:
-        logger.error(f"Error reading file: {e}")
+        logger.error(f"خطأ أثناء قراءة الملف: {e}")
         update.message.reply_text("حدث خطأ أثناء قراءة الملف.")
         return
 
@@ -50,30 +51,29 @@ def handle_document(update: Update, context: CallbackContext):
     try:
         tree = html.fromstring(html_content)
     except Exception as e:
-        logger.error(f"Error parsing HTML: {e}")
-        update.message.reply_text("حدث خطأ أثناء تحليل الملف HTML.")
+        logger.error(f"خطأ أثناء تحليل HTML: {e}")
+        update.message.reply_text("حدث خطأ أثناء تحليل ملف HTML.")
         return
 
-    translator = Translator()
+    # إنشاء مترجم Google
+    translator = GoogleTranslator(source='en', target='ar')
 
-    # المرور على جميع العناصر وتعديل النصوص
+    # ترجمة النصوص داخل عناصر HTML
     for element in tree.iter():
         if element.tag in ['script', 'style', 'noscript']:
             continue
 
         if element.text and element.text.strip():
             try:
-                translated_text = translator.translate(element.text, src='en', dest='ar').text
-                element.text = translated_text
+                element.text = translator.translate(element.text)
             except Exception as e:
-                logger.error(f"Error translating text '{element.text}': {e}")
+                logger.error(f"خطأ أثناء ترجمة النص '{element.text}': {e}")
 
         if element.tail and element.tail.strip():
             try:
-                translated_tail = translator.translate(element.tail, src='en', dest='ar').text
-                element.tail = translated_tail
+                element.tail = translator.translate(element.tail)
             except Exception as e:
-                logger.error(f"Error translating tail text '{element.tail}': {e}")
+                logger.error(f"خطأ أثناء ترجمة النص '{element.tail}': {e}")
 
     # استخراج النص المترجم للملف HTML مع الحفاظ على التصميم
     translated_html = html.tostring(tree, encoding='unicode', pretty_print=True)
@@ -84,7 +84,7 @@ def handle_document(update: Update, context: CallbackContext):
         with open(output_file_path, 'w', encoding='utf-8') as f:
             f.write(translated_html)
     except Exception as e:
-        logger.error(f"Error writing translated file: {e}")
+        logger.error(f"خطأ أثناء حفظ الملف المترجم: {e}")
         update.message.reply_text("حدث خطأ أثناء حفظ الملف المترجم.")
         return
 
@@ -96,6 +96,7 @@ def handle_document(update: Update, context: CallbackContext):
     os.remove(file_path)
     os.remove(output_file_path)
 
+# دالة تشغيل البوت
 def main():
     updater = Updater(token=TELEGRAM_TOKEN, use_context=True)
     dp = updater.dispatcher

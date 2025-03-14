@@ -1,7 +1,7 @@
 import logging
 import os
 from lxml import html
-from deep_translator import GoogleTranslator
+from textblob import TextBlob
 from telegram import Update
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
@@ -55,13 +55,7 @@ def handle_document(update: Update, context: CallbackContext):
         update.message.reply_text("حدث خطأ أثناء تحليل ملف HTML.")
         return
 
-    # إنشاء مترجم Google
-    translator = GoogleTranslator(source='en', target='ar')
-
-    # نص مرجعي عربي لتحسين الترجمة
-    reference_text = "هذه جملة عربية مرجعية لضمان دقة الترجمة."
-
-    # ترجمة النصوص داخل عناصر HTML
+    # ترجمة النصوص داخل عناصر HTML باستخدام TextBlob
     for element in tree.iter():
         if element.tag in ['script', 'style', 'noscript']:
             continue  # تجنب تغيير النصوص البرمجية
@@ -69,14 +63,16 @@ def handle_document(update: Update, context: CallbackContext):
         if element.text and element.text.strip():
             if any(c.isalpha() for c in element.text):  # التأكد من وجود أحرف
                 try:
-                    element.text = translator.translate(reference_text + " " + element.text).replace(reference_text, "")
+                    blob = TextBlob(element.text)
+                    element.text = str(blob.translate(to='ar'))
                 except Exception as e:
                     logger.error(f"خطأ أثناء ترجمة النص '{element.text}': {e}")
 
         if element.tail and element.tail.strip():
             if any(c.isalpha() for c in element.tail):
                 try:
-                    element.tail = translator.translate(reference_text + " " + element.tail).replace(reference_text, "")
+                    blob = TextBlob(element.tail)
+                    element.tail = str(blob.translate(to='ar'))
                 except Exception as e:
                     logger.error(f"خطأ أثناء ترجمة النص '{element.tail}': {e}")
 

@@ -154,7 +154,7 @@ def translate_pptx(input_path, output_path, progress_callback=None):
 def handle_document(update: Update, context: CallbackContext) -> None:
     # منع إرسال أكثر من ملف في رسالة واحدة
     if update.message.media_group_id:
-        update.message.reply_text("يرجى إرسال ملف واحد فقط في كل رسالة.")
+        update.message.reply_text("❌ الرجاء إرسال ملف واحد فقط في كل مرة.\n الا وسف يتم حظرك😂")
         return
 
     document = update.message.document
@@ -163,7 +163,7 @@ def handle_document(update: Update, context: CallbackContext) -> None:
 
     # التحقق من حجم الملف (1 ميجابايت)
     if document.file_size > 1 * 1024 * 1024:
-        update.message.reply_text("حجم الملف أكبر من 1 ميجابايت المسموح به.")
+        update.message.reply_text("❌ حجم الملف أكبر من 1MB. يرجى إرسال ملف PDF أصغر.\n قسم بضغط ملف في البوت هذا :@i2pdfbot\n ثم قم بارسال ملف لكي اترجمة")
         return
 
     # تحديث حد الاستخدام اليومي
@@ -173,7 +173,7 @@ def handle_document(update: Update, context: CallbackContext) -> None:
         last_date, count = user_file_usage[user_id]
         if last_date == today_str:
             if count >= 5:
-                update.message.reply_text("لقد تجاوزت الحد اليومي لتحويل الملفات (5 ملفات يومياً).")
+                update.message.reply_text("🚫 لقد تجاوزت الحد الأقصى (5 ملفات يوميًا). يرجى المحاولة غدًا.")
                 return
             else:
                 user_file_usage[user_id] = (today_str, count + 1)
@@ -195,7 +195,7 @@ def handle_document(update: Update, context: CallbackContext) -> None:
                 reader = PyPDF2.PdfReader(f)
                 num_pages = len(reader.pages)
             if num_pages > 5:
-                update.message.reply_text("يرجى إرسال ملف PDF يحتوي على 5 صفحات أو أقل.")
+                update.message.reply_text("❌ الحد الأقصى هو 5 صفحات بسبب التحميل الزائد.\n قسم بتقسيم ملف في البوت هذا :@i2pdfbot\n ثم قم بارسال ملف لكي اترجمة")
                 os.remove(input_filename)
                 return
         except Exception as e:
@@ -236,7 +236,7 @@ def handle_document(update: Update, context: CallbackContext) -> None:
         status_url = f"{CONVERTIO_API}/{conversion_id}/status"
         start_time = time.time()
         max_wait_time = 60
-        progress_message = update.message.reply_text("جاري الترجمة... 0%")
+        progress_message = update.message.reply_text("جاري الترجمة الثنائية... 0%")
         
         while True:
             time.sleep(2)
@@ -254,14 +254,14 @@ def handle_document(update: Update, context: CallbackContext) -> None:
             try:
                 context.bot.edit_message_text(chat_id=update.message.chat_id,
                                               message_id=progress_message.message_id,
-                                              text=f"جاري الترجمة... {progress}%")
+                                              text=f"جاري الترجمة الثنائية... {progress}%")
             except Exception as e:
                 logger.error(f"Error editing progress message: {e}")
             if step == 'finish':
                 try:
                     context.bot.edit_message_text(chat_id=update.message.chat_id,
                                                   message_id=progress_message.message_id,
-                                                  text="جاري الترجمة... 100%")
+                                                  text="جاري الترجمة الثنائية... 100%")
                 except Exception as e:
                     logger.error(f"Error finalizing progress message: {e}")
                 break
@@ -302,7 +302,7 @@ def handle_document(update: Update, context: CallbackContext) -> None:
             f.write(translated_html)
 
         update.message.reply_document(document=open(translated_file_path, 'rb'),
-                                      caption="✅ تم ترجمة الملف بنجاح!")
+                                      caption="✅ تم ترجمة الملف بنجاح!\n اذا لم يعجبك تصميم  ملف في اعلا يمكنك استخدام هذا ملف\n @ta_ja199 لاستفسار")
         context.bot.delete_message(chat_id=update.message.chat_id,
                                    message_id=progress_message.message_id)
 
@@ -317,7 +317,7 @@ def handle_document(update: Update, context: CallbackContext) -> None:
         base_name = os.path.splitext(document.file_name)[0]
         output_filename = f"{base_name}.docx"
 
-        progress_message = update.message.reply_text("جاري الترجمة... 0%")
+        progress_message = update.message.reply_text("جاري الترجمة الثنائية... 0%")
         def progress_callback(progress):
             try:
                 context.bot.edit_message_text(chat_id=update.message.chat_id,
@@ -341,7 +341,7 @@ def handle_document(update: Update, context: CallbackContext) -> None:
             logger.error(f"Error deleting progress message for DOCX: {e}")
 
         update.message.reply_document(document=open(output_filename, 'rb'),
-                                      caption="✅ تم ترجمة الملف بنجاح!")
+                                      caption="✅ تم ترجمة الملف بنجاح!\n يمكنك استعمال هذا البوت في تحويله لpdf :@i2pdfbot")
         os.remove(input_filename)
         os.remove(output_filename)
 
@@ -376,26 +376,27 @@ def handle_document(update: Update, context: CallbackContext) -> None:
             logger.error(f"Error deleting progress message for PPTX: {e}")
 
         update.message.reply_document(document=open(output_filename, 'rb'),
-                                      caption="✅ تم ترجمة الملف بنجاح!")
+                                      caption="✅ تم ترجمة الملف بنجاح!\n يمكنك استعمال هذا البوت في تحويله لpdf :@i2pdfbot")
         os.remove(input_filename)
         os.remove(output_filename)
 
     else:
         update.message.reply_text("يرجى إرسال ملف بصيغة PDF, DOCX, أو PPTX فقط.")
 
-def start(update: Update, context: CallbackContext) -> None:
+def help(update: Update, context: CallbackContext) -> None:
     update.message.reply_text(
-        "مرحباً! يرجى إرسال ملف من الأنواع التالية:\n"
-        "• PDF (بحجم ≤ 1 ميجابايت و5 صفحات أو أقل)\n"
-        "• DOCX\n"
-        "• PPTX"
+        "مرحباً بك قسم مساعدة! يرجى إرسال ملف من الأنواع التالية:\n"
+        "يمكن ترجمة ملفات pdf لكن بقيود لكي لا يتوقف البوت تم تقييد ملفات ب\n"
+        "1BM كحد اقصى \nوحد 5 صفحات و خمس ملفات في اليوم\n"
+        "الصيغ التي يمكن ترجمتها هي:pdf,docx,pptx\n"
+        "لاستفسار @ta_ja199"
     )
 
 def main() -> None:
     updater = Updater(TELEGRAM_TOKEN, use_context=True)
     dp = updater.dispatcher
 
-    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CommandHandler("help", help))
     dp.add_handler(MessageHandler(Filters.document, handle_document))
 
     updater.start_polling()

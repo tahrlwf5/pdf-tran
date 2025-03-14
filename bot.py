@@ -433,7 +433,7 @@ def main() -> None:
     updater = Updater(TELEGRAM_TOKEN, use_context=True)
     dp = updater.dispatcher
 
-    dp.add_handler(CommandHandler("strat", start)) 
+    dp.add_handler(CommandHandler("start", start)) 
     dp.add_handler(MessageHandler(Filters.document, handle_document))
 
     updater.start_polling()

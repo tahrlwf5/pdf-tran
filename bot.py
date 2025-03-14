@@ -6,7 +6,7 @@ from googletrans import Translator
 import chardet
 import arabic_reshaper
 from bidi.algorithm import get_display
-import pdfkit  # مكتبة تحويل HTML إلى PDF
+import pdfkit
 
 # إعداد تسجيل الأخطاء
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -34,21 +34,17 @@ def translate_text_group(text_group):
     تقوم هذه الدالة بتجميع مجموعة من أجزاء النص معًا باستخدام فاصل مميز لترجمتها مرة واحدة.
     بعد الترجمة يتم تقسيم النص المترجم بناءً على الفاصل وإعادة تطبيق الفراغات الأصلية مع إصلاح اتجاه النص العربي.
     """
-    # استخدم فاصل فريد وغير شائع في النصوص
     marker = "<<<SEP>>>"
     combined = marker.join(segment.strip() for segment in text_group)
     try:
         translated_combined = translator.translate(combined, src='en', dest='ar').text
-        # إصلاح اتجاه النص العربي
         translated_combined = fix_arabic(translated_combined)
     except Exception as e:
         logger.error(f"خطأ أثناء ترجمة المجموعة: {e}")
         translated_combined = None
 
-    # تقسيم النص المترجم باستخدام الفاصل
     if translated_combined:
         parts = translated_combined.split(marker)
-        # التأكد من تطابق عدد القطع
         if len(parts) == len(text_group):
             final_parts = []
             for orig, part in zip(text_group, parts):
@@ -57,7 +53,6 @@ def translate_text_group(text_group):
                 final_parts.append(leading_spaces + part + trailing_spaces)
             return final_parts
 
-    # إذا لم تنجح عملية التجميع، نترجم كل جزء على حدة
     result = []
     for segment in text_group:
         try:
@@ -129,7 +124,6 @@ def handle_file(update, context):
         file = document.get_file()
         file_bytes = file.download_as_bytearray()
         
-        # اكتشاف الترميز الصحيح باستخدام chardet
         detected_encoding = chardet.detect(file_bytes)['encoding']
         try:
             html_content = file_bytes.decode(detected_encoding)
@@ -138,28 +132,26 @@ def handle_file(update, context):
             update.message.reply_text("تعذر فك ترميز الملف. يرجى التأكد من أن الملف يستخدم ترميزاً مدعوماً.")
             return
         
-        # ترجمة محتوى HTML
         translated_html = translate_html(html_content)
         
-        # حفظ الملف المترجم بصيغة HTML مؤقتاً
+        # حفظ الملف المترجم بصيغة HTML
         translated_html_path = 'translated.html'
         with open(translated_html_path, 'w', encoding='utf-8') as f:
             f.write(translated_html)
         
-        # تحويل ملف HTML المترجم إلى PDF باستخدام pdfkit
+        # تحويل HTML إلى PDF باستخدام pdfkit مع تحديد مسار wkhtmltopdf داخل Docker
         translated_pdf_path = 'translated.pdf'
         try:
-            pdfkit.from_string(translated_html, translated_pdf_path)
+            config = pdfkit.configuration(wkhtmltopdf='/usr/bin/wkhtmltopdf')
+            pdfkit.from_string(translated_html, translated_pdf_path, configuration=config)
         except Exception as e:
             logger.error(f"خطأ أثناء تحويل HTML إلى PDF: {e}")
             update.message.reply_text("حدث خطأ أثناء تحويل الملف إلى PDF.")
             return
         
-        # إرسال الملفين للمستخدم
         update.message.reply_document(document=open(translated_html_path, 'rb'), filename="translated.html")
         update.message.reply_document(document=open(translated_pdf_path, 'rb'), filename="translated.pdf")
         
-        # حذف الملفات المؤقتة
         os.remove(translated_html_path)
         os.remove(translated_pdf_path)
     else:

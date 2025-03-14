@@ -2,12 +2,13 @@ import logging
 import os
 import time
 import base64
+import json
 import requests
 import chardet
 from datetime import date
 import PyPDF2
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from bs4 import BeautifulSoup, NavigableString
 from googletrans import Translator
 import arabic_reshaper
@@ -22,15 +23,33 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # إعداد التوكن ومفاتيح API
-TELEGRAM_TOKEN = '8060810536:AAFGPiwBQuYSJG0UUwiypPfowr10qqc0nq0'
+TELEGRAM_TOKEN = '7912949647:AAFOPvPuWtU6fyZNUCa08WuU9KVXJZZiXMM'
 CONVERTIO_API = 'https://api.convertio.co/convert'
 API_KEY = '3c50e707584d2cbe0139d35033b99d7c'
+
+# إعداد ملف بيانات المستخدمين ومعرف الإدارة (غيرل ADMIN_CHAT_ID بالمعرف الخاص بك)
+USER_FILE = "user_data.json"
+ADMIN_CHAT_ID = 5198110160  # استبدل هذا بالمعرف الخاص بك
 
 # إنشاء مثيل للمترجم
 translator = Translator()
 
 # لتتبع عدد الملفات المحولة يومياً لكل مستخدم (user_id: (last_date, count))
 user_file_usage = {}
+
+def load_user_data():
+    if os.path.exists(USER_FILE):
+        with open(USER_FILE, 'r', encoding='utf-8') as f:
+            try:
+                return json.load(f)
+            except Exception as e:
+                logger.error(f"Error loading user data: {e}")
+                return {}
+    return {}
+
+def save_user_data(data):
+    with open(USER_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
 
 def fix_arabic(text):
     reshaped = arabic_reshaper.reshape(text)
@@ -236,7 +255,7 @@ def handle_document(update: Update, context: CallbackContext) -> None:
         status_url = f"{CONVERTIO_API}/{conversion_id}/status"
         start_time = time.time()
         max_wait_time = 60
-        progress_message = update.message.reply_text("جاري الترجمة الثنائية... 0%")
+        progress_message = update.message.reply_text("جاري الترجمة ... 0%")
         
         while True:
             time.sleep(2)
@@ -254,14 +273,14 @@ def handle_document(update: Update, context: CallbackContext) -> None:
             try:
                 context.bot.edit_message_text(chat_id=update.message.chat_id,
                                               message_id=progress_message.message_id,
-                                              text=f"جاري الترجمة الثنائية... {progress}%")
+                                              text=f"جاري الترجمة ... {progress}%")
             except Exception as e:
                 logger.error(f"Error editing progress message: {e}")
             if step == 'finish':
                 try:
                     context.bot.edit_message_text(chat_id=update.message.chat_id,
                                                   message_id=progress_message.message_id,
-                                                  text="جاري الترجمة الثنائية... 100%")
+                                                  text="جاري الترجمة ... 100%")
                 except Exception as e:
                     logger.error(f"Error finalizing progress message: {e}")
                 break
@@ -302,7 +321,7 @@ def handle_document(update: Update, context: CallbackContext) -> None:
             f.write(translated_html)
 
         update.message.reply_document(document=open(translated_file_path, 'rb'),
-                                      caption="✅ تم ترجمة الملف بنجاح!\n اذا لم يعجبك تصميم  ملف في اعلا يمكنك استخدام هذا ملف\n @ta_ja199 لاستفسار")
+                                      caption="✅ تم ترجمة الملف بنجاح!\n @ta_ja199 لاستفسار\n استعمل البوت في تحويل ملفاتك:@i2pdfbot")
         context.bot.delete_message(chat_id=update.message.chat_id,
                                    message_id=progress_message.message_id)
 
@@ -317,7 +336,7 @@ def handle_document(update: Update, context: CallbackContext) -> None:
         base_name = os.path.splitext(document.file_name)[0]
         output_filename = f"{base_name}.docx"
 
-        progress_message = update.message.reply_text("جاري الترجمة الثنائية... 0%")
+        progress_message = update.message.reply_text("جاري الترجمة ... 0%")
         def progress_callback(progress):
             try:
                 context.bot.edit_message_text(chat_id=update.message.chat_id,
@@ -384,19 +403,37 @@ def handle_document(update: Update, context: CallbackContext) -> None:
         update.message.reply_text("يرجى إرسال ملف بصيغة PDF, DOCX, أو PPTX فقط.")
 
 def start(update: Update, context: CallbackContext) -> None:
+    # التحقق من دخول مستخدم جديد وحفظ بياناته
+    user_data = load_user_data()
+    user_id = str(update.message.from_user.id)
+    if user_id not in user_data:
+        user_data[user_id] = {"first_start": time.time()}
+        save_user_data(user_data)
+        # إرسال رسالة للإدارة عند دخول مستخدم جديد
+        try:
+            context.bot.send_message(chat_id=ADMIN_CHAT_ID, text=f"دخل مستخدم جديد:\nالاسم: {update.message.from_user.full_name}\nالمعرف: {update.message.from_user.id}")
+        except Exception as e:
+            logger.error(f"Error sending admin notification: {e}")
+
+    keyboard = [
+        [InlineKeyboardButton("قناة البوت 🔫", url="https://t.me/i2pdfbotchannel")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
     update.message.reply_text(
-        "مرحباً بك قسم مساعدة! يرجى إرسال ملف من الأنواع التالية:\n"
-        "يمكن ترجمة ملفات pdf لكن بقيود لكي لا يتوقف البوت تم تقييد ملفات ب\n"
-        "1BM كحد اقصى \nوحد 5 صفحات و خمس ملفات في اليوم\n"
+        "مرحبا انا بوت اقوم بترجمة ملفات PDF,DOCX,PPTX\n"
+        "البوت تابع ل: @i2pdfbot\n"
+        "😇 ملاحضه البوت تجريبي فقط سوف يتم تطويره قريبا\n"
         "الصيغ التي يمكن ترجمتها هي:pdf,docx,pptx\n"
-        "لاستفسار @ta_ja199"
+        "لاستفسار @ta_ja199",
+        reply_markup=reply_markup
     )
 
 def main() -> None:
     updater = Updater(TELEGRAM_TOKEN, use_context=True)
     dp = updater.dispatcher
 
-    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CommandHandler("strat", start)) 
     dp.add_handler(MessageHandler(Filters.document, handle_document))
 
     updater.start_polling()

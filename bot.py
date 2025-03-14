@@ -13,10 +13,10 @@ from bs4 import BeautifulSoup, NavigableString
 from googletrans import Translator
 import arabic_reshaper
 from bidi.algorithm import get_display
-
-# المكتبات الخاصة بملفات DOCX و PPTX
 from docx import Document
 from pptx import Presentation
+import pdfcrowd
+import io
 
 # إعداد تسجيل الأخطاء
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -25,9 +25,13 @@ logger = logging.getLogger(__name__)
 # إعداد التوكن ومفاتيح API
 TELEGRAM_TOKEN = '7912949647:AAFOPvPuWtU6fyZNUCa08WuU9KVXJZZiXMM'
 CONVERTIO_API = 'https://api.convertio.co/convert'
-API_KEY = '3c50e707584d2cbe0139d35033b99d7c'
+CONVERTIO_API_KEY = '3c50e707584d2cbe0139d35033b99d7c'
 
-# إعداد ملف بيانات المستخدمين ومعرف الإدارة (غيرل ADMIN_CHAT_ID بالمعرف الخاص بك)
+# بيانات PDFCrowd (لتحويل HTML إلى PDF)
+PDFCROWD_USERNAME = "taherja"
+PDFCROWD_API_KEY = "4f59bd9b2030deabe9d14c92ed65817a"
+
+# إعداد ملف بيانات المستخدمين ومعرف الإدارة (غير ADMIN_CHAT_ID بمعرفك الخاص)
 USER_FILE = "user_data.json"
 ADMIN_CHAT_ID = 5198110160  # استبدل هذا بالمعرف الخاص بك
 
@@ -129,10 +133,6 @@ def build_progress_text(progress: int) -> str:
     return f"جاري الترجمة... {progress}%"
 
 def translate_docx(input_path, output_path, progress_callback=None):
-    """
-    تفتح الدالة ملف DOCX، وتترجم نصوص كل فقرة مع تحديث التقدم عبر callback (إن وجد)
-    ثم تحفظ الملف المترجم.
-    """
     doc = Document(input_path)
     total = len(doc.paragraphs) if doc.paragraphs else 1
     for i, para in enumerate(doc.paragraphs):
@@ -148,10 +148,6 @@ def translate_docx(input_path, output_path, progress_callback=None):
     doc.save(output_path)
 
 def translate_pptx(input_path, output_path, progress_callback=None):
-    """
-    تفتح الدالة ملف PPTX وتجمع كل العناصر (shapes) التي تحتوي على نص، ثم تترجم كل نص مع تحديث التقدم.
-    ثم تحفظ الملف المترجم.
-    """
     prs = Presentation(input_path)
     shapes_list = []
     for slide in prs.slides:
@@ -169,6 +165,20 @@ def translate_pptx(input_path, output_path, progress_callback=None):
         if progress_callback:
             progress_callback(int(((i+1) / total) * 100))
     prs.save(output_path)
+
+def convert_html_to_pdf(html_content: str) -> bytes:
+    """
+    تحويل نص HTML إلى PDF باستخدام PDFCrowd API.
+    """
+    try:
+        client = pdfcrowd.HtmlToPdfClient(PDFCROWD_USERNAME, PDFCROWD_API_KEY)
+        output_stream = io.BytesIO()
+        client.convertStringToStream(html_content, output_stream)
+        output_stream.seek(0)
+        return output_stream.read()
+    except pdfcrowd.Error as e:
+        logger.error("PDFCrowd Error: %s", e)
+        return None
 
 def handle_document(update: Update, context: CallbackContext) -> None:
     # منع إرسال أكثر من ملف في رسالة واحدة
@@ -204,7 +214,7 @@ def handle_document(update: Update, context: CallbackContext) -> None:
     filename_lower = document.file_name.lower()
     
     if filename_lower.endswith('.pdf'):
-        # معالجة ملفات PDF (يتم تحويلها إلى HTML ثم ترجمتها)
+        # معالجة ملفات PDF: تحويلها أولاً إلى HTML ثم ترجمتها
         file = document.get_file()
         input_filename = 'input.pdf'
         file.download(input_filename)
@@ -228,7 +238,7 @@ def handle_document(update: Update, context: CallbackContext) -> None:
         encoded_file = base64.b64encode(file_data).decode('utf-8')
 
         payload = {
-            "apikey": API_KEY,
+            "apikey": CONVERTIO_API_KEY,
             "input": "base64",
             "file": encoded_file,
             "filename": document.file_name,
@@ -316,18 +326,39 @@ def handle_document(update: Update, context: CallbackContext) -> None:
         # ترجمة محتوى HTML الناتج
         translated_html = translate_html(html_content)
         base_name = os.path.splitext(document.file_name)[0]
-        translated_file_path = f"{base_name}.html"
-        with open(translated_file_path, 'w', encoding='utf-8') as f:
+        translated_html_path = f"{base_name}.html"
+        with open(translated_html_path, 'w', encoding='utf-8') as f:
             f.write(translated_html)
 
-        update.message.reply_document(document=open(translated_file_path, 'rb'),
-                                      caption="✅ تم ترجمة الملف بنجاح!\n @ta_ja199 لاستفسار\n استعمل البوت في تحويل ملفاتك:@i2pdfbot")
-        context.bot.delete_message(chat_id=update.message.chat_id,
-                                   message_id=progress_message.message_id)
+        # تحويل HTML المترجم إلى PDF باستخدام PDFCrowd
+        pdf_bytes = convert_html_to_pdf(translated_html)
+        if pdf_bytes is None:
+            update.message.reply_text("حدث خطأ أثناء تحويل HTML إلى PDF باستخدام PDFCrowd.")
+            os.remove(input_filename)
+            os.remove(output_filename)
+            os.remove(translated_html_path)
+            return
+        translated_pdf_path = f"{base_name}.pdf"
+        with open(translated_pdf_path, 'wb') as f:
+            f.write(pdf_bytes)
 
+        # إرسال الملفين للمستخدم
+        update.message.reply_document(document=open(translated_html_path, 'rb'),
+                                      caption="✅ تم ترجمة الملف بنجاح! (HTML)")
+        update.message.reply_document(document=open(translated_pdf_path, 'rb'),
+                                      caption="✅ تم تحويل HTML إلى PDF بنجاح!")
+
+        try:
+            context.bot.delete_message(chat_id=update.message.chat_id,
+                                       message_id=progress_message.message_id)
+        except Exception as e:
+            logger.error(f"Error deleting progress message: {e}")
+
+        # حذف الملفات المؤقتة
         os.remove(input_filename)
         os.remove(output_filename)
-        os.remove(translated_file_path)
+        os.remove(translated_html_path)
+        os.remove(translated_pdf_path)
 
     elif filename_lower.endswith('.docx'):
         # معالجة ملفات DOCX: ترجمة الملف مباشرة مع تحديث رسالة الانتظار
@@ -360,7 +391,7 @@ def handle_document(update: Update, context: CallbackContext) -> None:
             logger.error(f"Error deleting progress message for DOCX: {e}")
 
         update.message.reply_document(document=open(output_filename, 'rb'),
-                                      caption="✅ تم ترجمة الملف بنجاح!\n يمكنك استعمال هذا البوت في تحويله لpdf :@i2pdfbot")
+                                      caption="✅ تم ترجمة الملف بنجاح!\nيمكنك استعمال هذا البوت في تحويله لPDF :@i2pdfbot")
         os.remove(input_filename)
         os.remove(output_filename)
 
@@ -395,7 +426,7 @@ def handle_document(update: Update, context: CallbackContext) -> None:
             logger.error(f"Error deleting progress message for PPTX: {e}")
 
         update.message.reply_document(document=open(output_filename, 'rb'),
-                                      caption="✅ تم ترجمة الملف بنجاح!\n يمكنك استعمال هذا البوت في تحويله لpdf :@i2pdfbot")
+                                      caption="✅ تم ترجمة الملف بنجاح!\nيمكنك استعمال هذا البوت في تحويله لPDF :@i2pdfbot")
         os.remove(input_filename)
         os.remove(output_filename)
 
@@ -421,11 +452,11 @@ def start(update: Update, context: CallbackContext) -> None:
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     update.message.reply_text(
-        "مرحبا انا بوت اقوم بترجمة ملفات PDF,DOCX,PPTX\n"
-        "البوت تابع ل: @i2pdfbot\n"
-        "😇 ملاحضه البوت تجريبي فقط سوف يتم تطويره قريبا\n"
-        "الصيغ التي يمكن ترجمتها هي:pdf,docx,pptx\n"
-        "لاستفسار @ta_ja199",
+        "مرحبا أنا بوت أقوم بترجمة ملفات PDF, DOCX, PPTX\n"
+        "البوت تابع لـ: @i2pdfbot\n"
+        "😇 ملاحظة: البوت تجريبي وسوف يتم تطويره قريباً\n"
+        "الصيغ المدعومة: pdf, docx, pptx\n"
+        "للاستفسار: @ta_ja199",
         reply_markup=reply_markup
     )
 

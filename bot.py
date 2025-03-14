@@ -17,14 +17,15 @@ TOKEN = '5153049530:AAG4LS17jVZdseUnGkodRpHzZxGLOnzc1gs'
 translator = Translator()
 
 def start(update, context):
-    """إرسال رسالة ترحيبية للمستخدم عند بدء التفاعل مع البوت."""
+    """رسالة الترحيب عند بدء التفاعل مع البوت."""
     update.message.reply_text("مرحباً! أرسل لي ملف HTML لأقوم بترجمته من الإنجليزية إلى العربية مع الحفاظ على التصميم.")
 
 def translate_html(html_content):
     """
     دالة تقوم بترجمة النصوص داخل ملف HTML.
     - تتجاهل ترجمة النصوص داخل وسوم <script> و <style>.
-    - تضيف وسم <meta charset="UTF-8"> إلى رأس الصفحة إذا لم يكن موجوداً.
+    - تحافظ على المسافات والتنسيق الأصلي.
+    - تضيف وسم <meta charset="UTF-8"> داخل <head> إذا لم يكن موجوداً.
     """
     soup = BeautifulSoup(html_content, 'html.parser')
     
@@ -39,10 +40,19 @@ def translate_html(html_content):
         # تجاهل النصوص داخل وسوم script أو style
         if element.parent.name in ['script', 'style']:
             continue
+        
+        # إذا كان النص يحتوي على محتوى غير فراغي
         if element.strip():
+            original_text = element
+            # استخراج المسافات اليسارية واليمينية للحفاظ على التنسيق
+            leading_spaces = original_text[:len(original_text) - len(original_text.lstrip())]
+            trailing_spaces = original_text[len(original_text.rstrip()):]
             try:
-                translated_text = translator.translate(element, src='en', dest='ar').text
-                element.replace_with(translated_text)
+                # ترجمة النص بعد إزالة الفراغات الزائدة من الجانبين
+                translated = translator.translate(original_text.strip(), src='en', dest='ar').text
+                # إعادة دمج الفراغات مع النص المترجم
+                new_text = leading_spaces + translated + trailing_spaces
+                element.replace_with(new_text)
             except Exception as e:
                 logger.error(f"خطأ أثناء الترجمة: {e}")
                 continue
@@ -53,7 +63,7 @@ def handle_file(update, context):
     """
     دالة للتعامل مع الملفات المرسلة:
     - تتحقق من أن الملف بصيغة HTML.
-    - تستخدم chardet لاكتشاف الترميز الصحيح.
+    - تستخدم مكتبة chardet لاكتشاف الترميز الصحيح.
     - تقوم بتحميل الملف وترجمته ثم إرسال النسخة المترجمة للمستخدم.
     """
     document = update.message.document

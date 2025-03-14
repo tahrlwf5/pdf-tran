@@ -4,6 +4,8 @@ from telegram.ext import Updater, MessageHandler, Filters, CommandHandler
 from bs4 import BeautifulSoup, NavigableString
 from googletrans import Translator
 import chardet
+import arabic_reshaper
+from bidi.algorithm import get_display
 
 # إعداد تسجيل الأخطاء
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -15,20 +17,28 @@ TOKEN = '5153049530:AAG4LS17jVZdseUnGkodRpHzZxGLOnzc1gs'
 # إنشاء مثيل للمترجم
 translator = Translator()
 
+def fix_arabic(text):
+    """
+    تعيد هذه الدالة تشكيل النص العربي وتصحيح اتجاهه باستخدام arabic-reshaper وpython-bidi.
+    """
+    reshaped = arabic_reshaper.reshape(text)
+    return get_display(reshaped)
+
 def start(update, context):
-    """رسالة ترحيب للمستخدم عند بدء المحادثة مع البوت."""
+    """رسالة ترحيب للمستخدم عند بدء التفاعل مع البوت."""
     update.message.reply_text("مرحباً! أرسل لي ملف HTML لأقوم بترجمته من الإنجليزية إلى العربية مع الحفاظ على التصميم.")
 
 def translate_text_group(text_group):
     """
-    تأخذ هذه الدالة قائمة من أجزاء النص (الموجودة كنصوص منفصلة)، وتجمعها باستخدام فاصل محدد (|||) لترجمتها مرة واحدة.
-    بعد الترجمة، يتم تقسيم النص المترجم بناءً على الفاصل وإعادة تطبيق الفراغات الأصلية.
+    تقوم هذه الدالة بتجميع مجموعة من أجزاء النص معًا باستخدام فاصل مميز لترجمتها مرة واحدة.
+    بعد الترجمة يتم تقسيم النص المترجم بناءً على الفاصل وإعادة تطبيق الفراغات الأصلية مع إصلاح اتجاه النص العربي.
     """
     marker = "|||"
-    # إزالة الفراغات الخارجية لكل جزء ثم الجمع مع الفاصل
     combined = marker.join(segment.strip() for segment in text_group)
     try:
         translated_combined = translator.translate(combined, src='en', dest='ar').text
+        # إصلاح اتجاه النص العربي
+        translated_combined = fix_arabic(translated_combined)
     except Exception as e:
         logger.error(f"خطأ أثناء ترجمة المجموعة: {e}")
         translated_combined = None
@@ -38,7 +48,6 @@ def translate_text_group(text_group):
         if len(parts) == len(text_group):
             final_parts = []
             for orig, part in zip(text_group, parts):
-                # استرجاع الفراغات الأصلية
                 leading_spaces = orig[:len(orig) - len(orig.lstrip())]
                 trailing_spaces = orig[len(orig.rstrip()):]
                 final_parts.append(leading_spaces + part + trailing_spaces)
@@ -48,6 +57,7 @@ def translate_text_group(text_group):
     for segment in text_group:
         try:
             t = translator.translate(segment.strip(), src='en', dest='ar').text
+            t = fix_arabic(t)
         except Exception as e:
             logger.error(f"خطأ أثناء ترجمة الجزء: {e}")
             t = segment
@@ -58,8 +68,8 @@ def translate_text_group(text_group):
 
 def process_parent_texts(parent):
     """
-    تقوم هذه الدالة بمعالجة محتويات عنصر HTML (parent) لجمع النصوص المتجاورة (NavigableString)
-    وترجمتها معاً، ثم إعادة توزيع النتائج في نفس الترتيب.
+    تقوم هذه الدالة بمعالجة محتويات عنصر HTML (parent) لتجميع النصوص المتجاورة وترجمتها معاً،
+    ثم إعادة توزيع النصوص المترجمة مع الحفاظ على ترتيبها الأصلي.
     """
     new_contents = []
     group = []
@@ -84,22 +94,19 @@ def process_parent_texts(parent):
 def translate_html(html_content):
     """
     تقوم هذه الدالة بترجمة محتوى HTML مع:
-    - إضافة وسم meta charset="UTF-8" إن لم يكن موجوداً.
-    - معالجة جميع العناصر (باستثناء وسوم script و style) لتجميع النصوص المجاورة وترجمتها.
+    - إضافة وسم <meta charset="UTF-8"> داخل <head> إذا لم يكن موجوداً.
+    - معالجة جميع العناصر (باستثناء وسوم script و style) لتجميع النصوص وترجمتها.
     """
     soup = BeautifulSoup(html_content, 'html.parser')
     
-    # التأكد من وجود وسم meta charset داخل <head>
     head = soup.find('head')
     if head and not head.find('meta', charset=True):
         meta_tag = soup.new_tag('meta', charset='UTF-8')
         head.insert(0, meta_tag)
     
-    # المرور على جميع العناصر باستثناء وسوم script و style
     for tag in soup.find_all():
         if tag.name in ['script', 'style']:
             continue
-        # إذا كان للعنصر نصوص قابلة للترجمة
         if any(isinstance(child, NavigableString) and child.strip() for child in tag.contents):
             process_parent_texts(tag)
     
@@ -126,7 +133,6 @@ def handle_file(update, context):
             update.message.reply_text("تعذر فك ترميز الملف. يرجى التأكد من أن الملف يستخدم ترميزاً مدعوماً.")
             return
         
-        # ترجمة محتوى HTML
         translated_html = translate_html(html_content)
         
         # حفظ الملف المترجم مؤقتاً
@@ -134,7 +140,6 @@ def handle_file(update, context):
         with open(translated_file_path, 'w', encoding='utf-8') as f:
             f.write(translated_html)
         
-        # إرسال الملف المترجم إلى المستخدم
         update.message.reply_document(document=open(translated_file_path, 'rb'))
         os.remove(translated_file_path)
     else:

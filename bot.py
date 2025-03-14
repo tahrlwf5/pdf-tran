@@ -33,7 +33,8 @@ def translate_text_group(text_group):
     تقوم هذه الدالة بتجميع مجموعة من أجزاء النص معًا باستخدام فاصل مميز لترجمتها مرة واحدة.
     بعد الترجمة يتم تقسيم النص المترجم بناءً على الفاصل وإعادة تطبيق الفراغات الأصلية مع إصلاح اتجاه النص العربي.
     """
-    marker = "|||"
+    # استخدم فاصل فريد وغير شائع في النصوص
+    marker = "<<<SEP>>>"
     combined = marker.join(segment.strip() for segment in text_group)
     try:
         translated_combined = translator.translate(combined, src='en', dest='ar').text
@@ -42,9 +43,11 @@ def translate_text_group(text_group):
     except Exception as e:
         logger.error(f"خطأ أثناء ترجمة المجموعة: {e}")
         translated_combined = None
-    
+
+    # تقسيم النص المترجم باستخدام الفاصل
     if translated_combined:
         parts = translated_combined.split(marker)
+        # التأكد من تطابق عدد القطع
         if len(parts) == len(text_group):
             final_parts = []
             for orig, part in zip(text_group, parts):
@@ -52,7 +55,8 @@ def translate_text_group(text_group):
                 trailing_spaces = orig[len(orig.rstrip()):]
                 final_parts.append(leading_spaces + part + trailing_spaces)
             return final_parts
-    # في حال فشل التجميع، نقوم بترجمة كل جزء على حدة
+
+    # إذا لم تنجح عملية التجميع (مثلاً اختلاف عدد القطع)، نترجم كل جزء على حدة
     result = []
     for segment in text_group:
         try:

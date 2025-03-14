@@ -22,7 +22,7 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 # إعداد التوكن ومفاتيح API
-TELEGRAM_TOKEN = '5146976580:AAH0ZpK52d6fKJY04v-9mRxb6Z1fTl0xNLw'
+TELEGRAM_TOKEN = '8060810536:AAFGPiwBQuYSJG0UUwiypPfowr10qqc0nq0'
 CONVERTIO_API = 'https://api.convertio.co/convert'
 API_KEY = '3c50e707584d2cbe0139d35033b99d7c'
 

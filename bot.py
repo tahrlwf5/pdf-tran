@@ -139,11 +139,16 @@ def handle_file(update, context):
         with open(translated_html_path, 'w', encoding='utf-8') as f:
             f.write(translated_html)
         
-        # تحويل HTML إلى PDF باستخدام pdfkit مع تحديد مسار wkhtmltopdf داخل Docker
+        # تحويل HTML إلى PDF باستخدام pdfkit مع خيارات إضافية
         translated_pdf_path = 'translated.pdf'
+        options = {
+            'encoding': "UTF-8",
+            'enable-local-file-access': '',
+            'javascript-delay': '2000'
+        }
         try:
             config = pdfkit.configuration(wkhtmltopdf='/usr/bin/wkhtmltopdf')
-            pdfkit.from_string(translated_html, translated_pdf_path, configuration=config)
+            pdfkit.from_string(translated_html, translated_pdf_path, configuration=config, options=options)
         except Exception as e:
             logger.error(f"خطأ أثناء تحويل HTML إلى PDF: {e}")
             update.message.reply_text("حدث خطأ أثناء تحويل الملف إلى PDF.")

@@ -29,17 +29,10 @@ translator = Translator()
 user_file_usage = {}
 
 def fix_arabic(text):
-    """
-    تعيد هذه الدالة تشكيل النص العربي وتصحيح اتجاهه باستخدام arabic-reshaper وpython-bidi.
-    """
     reshaped = arabic_reshaper.reshape(text)
     return get_display(reshaped)
 
 def translate_text_group(text_group):
-    """
-    تقوم هذه الدالة بتجميع مجموعة من أجزاء النص معًا باستخدام فاصل مميز لترجمتها مرة واحدة.
-    بعد الترجمة يتم تقسيم النص المترجم بناءً على الفاصل وإعادة تطبيق الفراغات الأصلية مع إصلاح اتجاه النص العربي.
-    """
     marker = "<<<SEP>>>"
     combined = marker.join(segment.strip() for segment in text_group)
     try:
@@ -59,7 +52,6 @@ def translate_text_group(text_group):
                 final_parts.append(leading_spaces + part + trailing_spaces)
             return final_parts
 
-    # إذا فشلت طريقة التجميع، نترجم كل جزء على حدة
     result = []
     for segment in text_group:
         try:
@@ -74,10 +66,6 @@ def translate_text_group(text_group):
     return result
 
 def process_parent_texts(parent):
-    """
-    تقوم هذه الدالة بمعالجة محتويات عنصر HTML (parent) لتجميع النصوص المتجاورة وترجمتها معاً،
-    ثم إعادة توزيع النصوص المترجمة مع الحفاظ على ترتيبها الأصلي.
-    """
     new_contents = []
     group = []
     for child in parent.contents:
@@ -99,11 +87,6 @@ def process_parent_texts(parent):
         parent.append(item)
 
 def translate_html(html_content):
-    """
-    تقوم هذه الدالة بترجمة محتوى HTML مع:
-    - إضافة وسم <meta charset="UTF-8"> داخل <head> إذا لم يكن موجوداً.
-    - معالجة جميع العناصر (باستثناء وسوم script و style) لتجميع النصوص وترجمتها.
-    """
     soup = BeautifulSoup(html_content, 'html.parser')
     
     head = soup.find('head')
@@ -120,26 +103,10 @@ def translate_html(html_content):
     return str(soup)
 
 def build_progress_text(progress: int) -> str:
-    """
-    يبني نص عرض تقدم التحويل مع النسبة وشريط التقدم.
-    نستخدم 5 مربعات، حيث ▪️ يمثل المربع الممتلئ و▫️ يمثل المربع الفارغ.
-    """
-    total_blocks = 5
-    filled = int(progress / 20)  # كل 20% يمثل مربعاً
-    progress_bar = "▪️" * filled + "▫️" * (total_blocks - filled)
-    return f"تم استلام الملف، جارٍ التحويل. يرجى الانتظار... {progress}% {progress_bar}"
+    # نعرض مربع أحمر فقط 🟥 دون نسب
+    return "تم استلام الملف، جارٍ التحويل. يرجى الانتظار... 🟥"
 
 def handle_document(update: Update, context: CallbackContext) -> None:
-    """
-    دالة التعامل مع ملفات PDF:
-    - التحقق من حجم الملف (<= 1 ميجابايت).
-    - منع إرسال أكثر من ملف في رسالة واحدة.
-    - منع ملفات PDF التي تحتوي على أكثر من 5 صفحات.
-    - تطبيق حد يومي بواقع 5 ملفات لكل مستخدم.
-    - تحويل ملف PDF إلى HTML باستخدام API ثم ترجمة الملف.
-    - عرض تحديثات شريط التقدم أثناء عملية التحويل.
-    - إرسال الملف الناتج مع كابشن.
-    """
     # منع إرسال أكثر من ملف في رسالة واحدة
     if update.message.media_group_id:
         update.message.reply_text("يرجى إرسال ملف واحد فقط في كل رسالة.")
@@ -175,7 +142,7 @@ def handle_document(update: Update, context: CallbackContext) -> None:
     else:
         user_file_usage[user_id] = (today_str, 1)
 
-    # تحميل الملف PDF
+    # تحميل ملف PDF
     file = document.get_file()
     input_filename = 'input.pdf'
     file.download(input_filename)
@@ -209,7 +176,6 @@ def handle_document(update: Update, context: CallbackContext) -> None:
         "outputformat": "html"
     }
 
-    # بدء عملية التحويل عبر API
     try:
         response = requests.post(CONVERTIO_API, json=payload)
         response.raise_for_status()
@@ -229,17 +195,10 @@ def handle_document(update: Update, context: CallbackContext) -> None:
     conversion_id = result['data']['id']
     status_url = f"{CONVERTIO_API}/{conversion_id}/status"
 
-    # إرسال رسالة أولية لعرض تقدم العملية
+    # إرسال رسالة تقدم ثابتة
     progress_message = update.message.reply_text(build_progress_text(0))
-    start_time = time.time()
-    max_wait_time = 60  # أقصى زمن افتراضي للتقدم (60 ثانية)
-
-    # الاستعلام الدوري لمعرفة حالة عملية التحويل مع تحديث التقدم
     while True:
         time.sleep(2)
-        elapsed = time.time() - start_time
-        # حساب نسبة مئوية تقريبية
-        progress = min(int((elapsed / max_wait_time) * 100), 100)
         try:
             status_resp = requests.get(status_url)
             status_data = status_resp.json()
@@ -249,19 +208,17 @@ def handle_document(update: Update, context: CallbackContext) -> None:
             os.remove(input_filename)
             return
         step = status_data.get('data', {}).get('step')
-        # تحديث رسالة التقدم
         try:
             context.bot.edit_message_text(chat_id=update.message.chat_id,
                                           message_id=progress_message.message_id,
-                                          text=build_progress_text(progress))
+                                          text=build_progress_text(0))
         except Exception as e:
             logger.error(f"Error editing progress message: {e}")
         if step == 'finish':
-            # تحديث التقدم إلى 100%
             try:
                 context.bot.edit_message_text(chat_id=update.message.chat_id,
                                               message_id=progress_message.message_id,
-                                              text=build_progress_text(100))
+                                              text=build_progress_text(0))
             except Exception as e:
                 logger.error(f"Error finalizing progress message: {e}")
             break
@@ -270,7 +227,7 @@ def handle_document(update: Update, context: CallbackContext) -> None:
             os.remove(input_filename)
             return
 
-    # الحصول على رابط تحميل الملف المحول
+    # تحميل الملف المحول
     download_url = status_data['data']['output']['url']
     try:
         download_resp = requests.get(download_url)
@@ -285,7 +242,6 @@ def handle_document(update: Update, context: CallbackContext) -> None:
     with open(output_filename, 'wb') as f:
         f.write(download_resp.content)
 
-    # قراءة محتوى HTML المحول وترجمته
     try:
         with open(output_filename, 'r', encoding='utf-8') as f:
             html_content = f.read()
@@ -297,21 +253,24 @@ def handle_document(update: Update, context: CallbackContext) -> None:
         return
 
     translated_html = translate_html(html_content)
-    translated_file_path = 'translated.html'
+    # تغيير اسم الملف الناتج ليصبح بنفس اسم الملف الأصلي مع امتداد html
+    base_name = os.path.splitext(document.file_name)[0]
+    translated_file_path = f"{base_name}.html"
     with open(translated_file_path, 'w', encoding='utf-8') as f:
         f.write(translated_html)
 
-    # إرسال الملف الناتج مع كابشن
     update.message.reply_document(document=open(translated_file_path, 'rb'),
                                   caption="✅ تم ترجمة الملف بنجاح!")
+    # حذف رسالة التقدم بعد إرسال الملف
+    context.bot.delete_message(chat_id=update.message.chat_id,
+                               message_id=progress_message.message_id)
 
-    # حذف الملفات المؤقتة
     os.remove(input_filename)
     os.remove(output_filename)
     os.remove(translated_file_path)
 
 def start(update: Update, context: CallbackContext) -> None:
-    update.message.reply_text("مرحباً! يرجى إرسال ملف PDF واحد (بحجم ≤ 1 ميجابايت و 5 صفحات أو أقل).")
+    update.message.reply_text("مرحباً! يرجى إرسال ملف PDF واحد (بحجم ≤ 1 ميجابايت و5 صفحات أو أقل).")
 
 def main() -> None:
     updater = Updater(TELEGRAM_TOKEN, use_context=True)

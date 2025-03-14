@@ -5,7 +5,7 @@ from deep_translator import GoogleTranslator
 from telegram import Update
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
-# إعداد سجل الأخطاء
+# إعداد تسجيل الأخطاء
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -13,7 +13,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # توكن بوت التليجرام
-TELEGRAM_TOKEN = '5153049530:AAG4LS17jVZdseUnGkodRpHzZxGLOnzc1gs'  # استبدل بالتوكن الخاص بك
+TELEGRAM_TOKEN = '5153049530:AAG4LS17jVZdseUnGkodRpHzZxGLOnzc1gs'  # ضع التوكن الخاص بك هنا
 
 # دالة بدء البوت
 def start(update: Update, context: CallbackContext):
@@ -38,9 +38,9 @@ def handle_document(update: Update, context: CallbackContext):
     file_path = os.path.join("downloads", document.file_name)
     new_file.download(file_path)
 
-    # قراءة محتوى ملف HTML
+    # قراءة محتوى ملف HTML مع التأكد من UTF-8
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
             html_content = f.read()
     except Exception as e:
         logger.error(f"خطأ أثناء قراءة الملف: {e}")
@@ -58,25 +58,34 @@ def handle_document(update: Update, context: CallbackContext):
     # إنشاء مترجم Google
     translator = GoogleTranslator(source='en', target='ar')
 
+    # نص مرجعي عربي لتحسين الترجمة
+    reference_text = "هذه جملة عربية مرجعية لضمان دقة الترجمة."
+
     # ترجمة النصوص داخل عناصر HTML
     for element in tree.iter():
         if element.tag in ['script', 'style', 'noscript']:
-            continue
+            continue  # تجنب تغيير النصوص البرمجية
 
         if element.text and element.text.strip():
-            try:
-                element.text = translator.translate(element.text)
-            except Exception as e:
-                logger.error(f"خطأ أثناء ترجمة النص '{element.text}': {e}")
+            if any(c.isalpha() for c in element.text):  # التأكد من وجود أحرف
+                try:
+                    element.text = translator.translate(reference_text + " " + element.text).replace(reference_text, "")
+                except Exception as e:
+                    logger.error(f"خطأ أثناء ترجمة النص '{element.text}': {e}")
 
         if element.tail and element.tail.strip():
-            try:
-                element.tail = translator.translate(element.tail)
-            except Exception as e:
-                logger.error(f"خطأ أثناء ترجمة النص '{element.tail}': {e}")
+            if any(c.isalpha() for c in element.tail):
+                try:
+                    element.tail = translator.translate(reference_text + " " + element.tail).replace(reference_text, "")
+                except Exception as e:
+                    logger.error(f"خطأ أثناء ترجمة النص '{element.tail}': {e}")
 
     # استخراج النص المترجم للملف HTML مع الحفاظ على التصميم
     translated_html = html.tostring(tree, encoding='unicode', pretty_print=True)
+
+    # تعديل الترميز ودعم العربية في HTML
+    if "<head>" in translated_html:
+        translated_html = translated_html.replace("<head>", "<head>\n<meta charset='UTF-8'>\n<meta http-equiv='Content-Language' content='ar'>")
 
     # حفظ الملف المترجم
     output_file_path = file_path.replace('.html', '_translated.html')

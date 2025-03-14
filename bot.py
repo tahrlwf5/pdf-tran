@@ -19,7 +19,7 @@ translator = Translator()
 
 def fix_arabic(text):
     """
-    تعيد هذه الدالة تشكيل النص العربي وتصحيح اتجاهه باستخدام arabic-reshaper وpython-bidi.
+    تقوم هذه الدالة بإعادة تشكيل النص العربي وتصحيح اتجاهه باستخدام arabic-reshaper و python-bidi.
     """
     reshaped = arabic_reshaper.reshape(text)
     return get_display(reshaped)
@@ -31,7 +31,7 @@ def start(update, context):
 def translate_text_group(text_group):
     """
     تقوم هذه الدالة بتجميع مجموعة من أجزاء النص معًا باستخدام فاصل مميز لترجمتها مرة واحدة.
-    بعد الترجمة يتم تقسيم النص المترجم بناءً على الفاصل وإعادة تطبيق الفراغات الأصلية مع إصلاح اتجاه النص العربي.
+    بعد الترجمة يتم تقسيم النص المترجم بناءً على الفاصل وإعادة تطبيق الفراغات الأصلية مع إصلاح اتجاه النص.
     """
     marker = "|||"
     combined = marker.join(segment.strip() for segment in text_group)
@@ -95,15 +95,23 @@ def translate_html(html_content):
     """
     تقوم هذه الدالة بترجمة محتوى HTML مع:
     - إضافة وسم <meta charset="UTF-8"> داخل <head> إذا لم يكن موجوداً.
+    - إضافة سمة dir="rtl" إلى وسم <html> لتحديد اتجاه القراءة من اليمين إلى اليسار.
     - معالجة جميع العناصر (باستثناء وسوم script و style) لتجميع النصوص وترجمتها.
     """
     soup = BeautifulSoup(html_content, 'html.parser')
     
+    # التأكد من وجود وسم meta charset داخل <head>
     head = soup.find('head')
     if head and not head.find('meta', charset=True):
         meta_tag = soup.new_tag('meta', charset='UTF-8')
         head.insert(0, meta_tag)
     
+    # إضافة سمة dir="rtl" إلى وسم <html> إن لم تكن موجودة
+    html_tag = soup.find('html')
+    if html_tag and not html_tag.has_attr('dir'):
+        html_tag['dir'] = 'rtl'
+    
+    # المرور على جميع العناصر باستثناء وسوم script و style
     for tag in soup.find_all():
         if tag.name in ['script', 'style']:
             continue

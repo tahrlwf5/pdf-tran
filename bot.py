@@ -6,6 +6,7 @@ from googletrans import Translator
 import chardet
 import arabic_reshaper
 from bidi.algorithm import get_display
+import pdfkit  # مكتبة تحويل HTML إلى PDF
 
 # إعداد تسجيل الأخطاء
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -56,7 +57,7 @@ def translate_text_group(text_group):
                 final_parts.append(leading_spaces + part + trailing_spaces)
             return final_parts
 
-    # إذا لم تنجح عملية التجميع (مثلاً اختلاف عدد القطع)، نترجم كل جزء على حدة
+    # إذا لم تنجح عملية التجميع، نترجم كل جزء على حدة
     result = []
     for segment in text_group:
         try:
@@ -121,7 +122,7 @@ def handle_file(update, context):
     دالة التعامل مع الملفات:
     - تتحقق من أن الملف بصيغة HTML.
     - تستخدم مكتبة chardet لاكتشاف الترميز.
-    - تقوم بتحميل الملف وترجمته ثم إرسال النسخة المترجمة للمستخدم.
+    - تقوم بتحميل الملف وترجمته ثم إرسال النسخة المترجمة للمستخدم بصيغتين (HTML و PDF).
     """
     document = update.message.document
     if document and document.file_name.lower().endswith('.html'):
@@ -137,15 +138,30 @@ def handle_file(update, context):
             update.message.reply_text("تعذر فك ترميز الملف. يرجى التأكد من أن الملف يستخدم ترميزاً مدعوماً.")
             return
         
+        # ترجمة محتوى HTML
         translated_html = translate_html(html_content)
         
-        # حفظ الملف المترجم مؤقتاً
-        translated_file_path = 'translated.html'
-        with open(translated_file_path, 'w', encoding='utf-8') as f:
+        # حفظ الملف المترجم بصيغة HTML مؤقتاً
+        translated_html_path = 'translated.html'
+        with open(translated_html_path, 'w', encoding='utf-8') as f:
             f.write(translated_html)
         
-        update.message.reply_document(document=open(translated_file_path, 'rb'))
-        os.remove(translated_file_path)
+        # تحويل ملف HTML المترجم إلى PDF باستخدام pdfkit
+        translated_pdf_path = 'translated.pdf'
+        try:
+            pdfkit.from_string(translated_html, translated_pdf_path)
+        except Exception as e:
+            logger.error(f"خطأ أثناء تحويل HTML إلى PDF: {e}")
+            update.message.reply_text("حدث خطأ أثناء تحويل الملف إلى PDF.")
+            return
+        
+        # إرسال الملفين للمستخدم
+        update.message.reply_document(document=open(translated_html_path, 'rb'), filename="translated.html")
+        update.message.reply_document(document=open(translated_pdf_path, 'rb'), filename="translated.pdf")
+        
+        # حذف الملفات المؤقتة
+        os.remove(translated_html_path)
+        os.remove(translated_pdf_path)
     else:
         update.message.reply_text("يرجى إرسال ملف بصيغة HTML فقط.")
 

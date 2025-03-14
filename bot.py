@@ -383,7 +383,7 @@ def handle_document(update: Update, context: CallbackContext) -> None:
     else:
         update.message.reply_text("يرجى إرسال ملف بصيغة PDF, DOCX, أو PPTX فقط.")
 
-def help(update: Update, context: CallbackContext) -> None:
+def start(update: Update, context: CallbackContext) -> None:
     update.message.reply_text(
         "مرحباً بك قسم مساعدة! يرجى إرسال ملف من الأنواع التالية:\n"
         "يمكن ترجمة ملفات pdf لكن بقيود لكي لا يتوقف البوت تم تقييد ملفات ب\n"
@@ -396,7 +396,7 @@ def main() -> None:
     updater = Updater(TELEGRAM_TOKEN, use_context=True)
     dp = updater.dispatcher
 
-    dp.add_handler(CommandHandler("help", help))
+    dp.add_handler(CommandHandler("start", start))
     dp.add_handler(MessageHandler(Filters.document, handle_document))
 
     updater.start_polling()

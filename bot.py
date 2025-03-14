@@ -107,12 +107,16 @@ def translate_html(html_content):
     return str(soup)
 
 def build_progress_text(progress: int) -> str:
-    return f"تم استلام الملف، جارٍ التحويل. يرجى الانتظار... {progress}%"
+    return f"جاري الترجمة... {progress}%"
 
-def translate_docx(input_path, output_path):
-    """تقوم هذه الدالة بفتح ملف DOCX، ترجمة النصوص الموجودة به، ثم حفظ الملف المترجم."""
+def translate_docx(input_path, output_path, progress_callback=None):
+    """
+    تفتح الدالة ملف DOCX، وتترجم نصوص كل فقرة مع تحديث التقدم عبر callback (إن وجد)
+    ثم تحفظ الملف المترجم.
+    """
     doc = Document(input_path)
-    for para in doc.paragraphs:
+    total = len(doc.paragraphs) if doc.paragraphs else 1
+    for i, para in enumerate(doc.paragraphs):
         if para.text.strip():
             try:
                 translated = translator.translate(para.text, src='en', dest='ar').text
@@ -120,20 +124,31 @@ def translate_docx(input_path, output_path):
                 para.text = translated
             except Exception as e:
                 logger.error(f"Error translating DOCX paragraph: {e}")
+        if progress_callback:
+            progress_callback(int(((i+1) / total) * 100))
     doc.save(output_path)
 
-def translate_pptx(input_path, output_path):
-    """تقوم هذه الدالة بفتح ملف PPTX، ترجمة النصوص الموجودة في الشرائح، ثم حفظ الملف المترجم."""
+def translate_pptx(input_path, output_path, progress_callback=None):
+    """
+    تفتح الدالة ملف PPTX وتجمع كل العناصر (shapes) التي تحتوي على نص، ثم تترجم كل نص مع تحديث التقدم.
+    ثم تحفظ الملف المترجم.
+    """
     prs = Presentation(input_path)
+    shapes_list = []
     for slide in prs.slides:
         for shape in slide.shapes:
             if hasattr(shape, "text") and shape.text.strip():
-                try:
-                    translated = translator.translate(shape.text, src='en', dest='ar').text
-                    translated = fix_arabic(translated)
-                    shape.text = translated
-                except Exception as e:
-                    logger.error(f"Error translating PPTX shape: {e}")
+                shapes_list.append(shape)
+    total = len(shapes_list) if shapes_list else 1
+    for i, shape in enumerate(shapes_list):
+        try:
+            translated = translator.translate(shape.text, src='en', dest='ar').text
+            translated = fix_arabic(translated)
+            shape.text = translated
+        except Exception as e:
+            logger.error(f"Error translating PPTX shape: {e}")
+        if progress_callback:
+            progress_callback(int(((i+1) / total) * 100))
     prs.save(output_path)
 
 def handle_document(update: Update, context: CallbackContext) -> None:
@@ -170,7 +185,7 @@ def handle_document(update: Update, context: CallbackContext) -> None:
     filename_lower = document.file_name.lower()
     
     if filename_lower.endswith('.pdf'):
-        # فرع معالجة ملفات PDF (يبقى كما هو)
+        # معالجة ملفات PDF (يتم تحويلها إلى HTML ثم ترجمتها)
         file = document.get_file()
         input_filename = 'input.pdf'
         file.download(input_filename)
@@ -221,7 +236,7 @@ def handle_document(update: Update, context: CallbackContext) -> None:
         status_url = f"{CONVERTIO_API}/{conversion_id}/status"
         start_time = time.time()
         max_wait_time = 60
-        progress_message = update.message.reply_text(build_progress_text(0))
+        progress_message = update.message.reply_text("جاري الترجمة... 0%")
         
         while True:
             time.sleep(2)
@@ -239,14 +254,14 @@ def handle_document(update: Update, context: CallbackContext) -> None:
             try:
                 context.bot.edit_message_text(chat_id=update.message.chat_id,
                                               message_id=progress_message.message_id,
-                                              text=build_progress_text(progress))
+                                              text=f"جاري الترجمة... {progress}%")
             except Exception as e:
                 logger.error(f"Error editing progress message: {e}")
             if step == 'finish':
                 try:
                     context.bot.edit_message_text(chat_id=update.message.chat_id,
                                                   message_id=progress_message.message_id,
-                                                  text=build_progress_text(100))
+                                                  text="جاري الترجمة... 100%")
                 except Exception as e:
                     logger.error(f"Error finalizing progress message: {e}")
                 break
@@ -296,36 +311,70 @@ def handle_document(update: Update, context: CallbackContext) -> None:
         os.remove(translated_file_path)
 
     elif filename_lower.endswith('.docx'):
-        # فرع معالجة ملفات DOCX: ترجمة الملف مباشرة دون تحويل
+        # معالجة ملفات DOCX: ترجمة الملف مباشرة مع تحديث رسالة الانتظار
         input_filename = 'input.docx'
         document.get_file().download(input_filename)
         base_name = os.path.splitext(document.file_name)[0]
         output_filename = f"{base_name}.docx"
+
+        progress_message = update.message.reply_text("جاري الترجمة... 0%")
+        def progress_callback(progress):
+            try:
+                context.bot.edit_message_text(chat_id=update.message.chat_id,
+                                              message_id=progress_message.message_id,
+                                              text=f"جاري الترجمة... {progress}%")
+            except Exception as e:
+                logger.error(f"Error updating progress message for DOCX: {e}")
+
         try:
-            translate_docx(input_filename, output_filename)
+            translate_docx(input_filename, output_filename, progress_callback)
         except Exception as e:
             logger.error(f"Error processing DOCX: {e}")
             update.message.reply_text("حدث خطأ أثناء ترجمة ملف DOCX.")
             os.remove(input_filename)
             return
+
+        try:
+            context.bot.delete_message(chat_id=update.message.chat_id,
+                                       message_id=progress_message.message_id)
+        except Exception as e:
+            logger.error(f"Error deleting progress message for DOCX: {e}")
+
         update.message.reply_document(document=open(output_filename, 'rb'),
                                       caption="✅ تم ترجمة الملف بنجاح!")
         os.remove(input_filename)
         os.remove(output_filename)
 
     elif filename_lower.endswith('.pptx'):
-        # فرع معالجة ملفات PPTX: ترجمة الملف مباشرة دون تحويل
+        # معالجة ملفات PPTX: ترجمة الملف مباشرة مع تحديث رسالة الانتظار
         input_filename = 'input.pptx'
         document.get_file().download(input_filename)
         base_name = os.path.splitext(document.file_name)[0]
         output_filename = f"{base_name}.pptx"
+
+        progress_message = update.message.reply_text("جاري الترجمة... 0%")
+        def progress_callback(progress):
+            try:
+                context.bot.edit_message_text(chat_id=update.message.chat_id,
+                                              message_id=progress_message.message_id,
+                                              text=f"جاري الترجمة... {progress}%")
+            except Exception as e:
+                logger.error(f"Error updating progress message for PPTX: {e}")
+
         try:
-            translate_pptx(input_filename, output_filename)
+            translate_pptx(input_filename, output_filename, progress_callback)
         except Exception as e:
             logger.error(f"Error processing PPTX: {e}")
             update.message.reply_text("حدث خطأ أثناء ترجمة ملف PPTX.")
             os.remove(input_filename)
             return
+
+        try:
+            context.bot.delete_message(chat_id=update.message.chat_id,
+                                       message_id=progress_message.message_id)
+        except Exception as e:
+            logger.error(f"Error deleting progress message for PPTX: {e}")
+
         update.message.reply_document(document=open(output_filename, 'rb'),
                                       caption="✅ تم ترجمة الملف بنجاح!")
         os.remove(input_filename)
@@ -335,7 +384,12 @@ def handle_document(update: Update, context: CallbackContext) -> None:
         update.message.reply_text("يرجى إرسال ملف بصيغة PDF, DOCX, أو PPTX فقط.")
 
 def start(update: Update, context: CallbackContext) -> None:
-    update.message.reply_text("مرحباً! يرجى إرسال ملف من الأنواع التالية:\n• PDF (بحجم ≤ 1 ميجابايت و5 صفحات أو أقل)\n• DOCX\n• PPTX")
+    update.message.reply_text(
+        "مرحباً! يرجى إرسال ملف من الأنواع التالية:\n"
+        "• PDF (بحجم ≤ 1 ميجابايت و5 صفحات أو أقل)\n"
+        "• DOCX\n"
+        "• PPTX"
+    )
 
 def main() -> None:
     updater = Updater(TELEGRAM_TOKEN, use_context=True)

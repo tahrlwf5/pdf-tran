@@ -1,9 +1,13 @@
 import logging
 import os
-from telegram.ext import Updater, MessageHandler, Filters, CommandHandler
+import time
+import base64
+import requests
+import chardet
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from telegram import Update
 from bs4 import BeautifulSoup, NavigableString
 from googletrans import Translator
-import chardet
 import arabic_reshaper
 from bidi.algorithm import get_display
 
@@ -11,8 +15,10 @@ from bidi.algorithm import get_display
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ضع توكن البوت الذي تحصل عليه من BotFather هنا
-TOKEN = '5153049530:AAG4LS17jVZdseUnGkodRpHzZxGLOnzc1gs'
+# إعداد التوكن والـ API Key
+TELEGRAM_TOKEN = '5146976580:AAH0ZpK52d6fKJY04v-9mRxb6Z1fTl0xNLw'
+CONVERTIO_API = 'https://api.convertio.co/convert'
+API_KEY = '3c50e707584d2cbe0139d35033b99d7c'
 
 # إنشاء مثيل للمترجم
 translator = Translator()
@@ -24,30 +30,22 @@ def fix_arabic(text):
     reshaped = arabic_reshaper.reshape(text)
     return get_display(reshaped)
 
-def start(update, context):
-    """رسالة ترحيب للمستخدم عند بدء التفاعل مع البوت."""
-    update.message.reply_text("مرحباً! أرسل لي ملف HTML لأقوم بترجمته من الإنجليزية إلى العربية مع الحفاظ على التصميم.")
-
 def translate_text_group(text_group):
     """
     تقوم هذه الدالة بتجميع مجموعة من أجزاء النص معًا باستخدام فاصل مميز لترجمتها مرة واحدة.
     بعد الترجمة يتم تقسيم النص المترجم بناءً على الفاصل وإعادة تطبيق الفراغات الأصلية مع إصلاح اتجاه النص العربي.
     """
-    # استخدم فاصل فريد وغير شائع في النصوص
     marker = "<<<SEP>>>"
     combined = marker.join(segment.strip() for segment in text_group)
     try:
         translated_combined = translator.translate(combined, src='en', dest='ar').text
-        # إصلاح اتجاه النص العربي
         translated_combined = fix_arabic(translated_combined)
     except Exception as e:
         logger.error(f"خطأ أثناء ترجمة المجموعة: {e}")
         translated_combined = None
 
-    # تقسيم النص المترجم باستخدام الفاصل
     if translated_combined:
         parts = translated_combined.split(marker)
-        # التأكد من تطابق عدد القطع
         if len(parts) == len(text_group):
             final_parts = []
             for orig, part in zip(text_group, parts):
@@ -56,7 +54,7 @@ def translate_text_group(text_group):
                 final_parts.append(leading_spaces + part + trailing_spaces)
             return final_parts
 
-    # إذا لم تنجح عملية التجميع (مثلاً اختلاف عدد القطع)، نترجم كل جزء على حدة
+    # إذا فشلت طريقة التجميع، نترجم كل جزء على حدة
     result = []
     for segment in text_group:
         try:
@@ -116,19 +114,20 @@ def translate_html(html_content):
     
     return str(soup)
 
-def handle_file(update, context):
+def handle_document(update: Update, context: CallbackContext) -> None:
     """
     دالة التعامل مع الملفات:
-    - تتحقق من أن الملف بصيغة HTML.
-    - تستخدم مكتبة chardet لاكتشاف الترميز.
-    - تقوم بتحميل الملف وترجمته ثم إرسال النسخة المترجمة للمستخدم.
+    - إذا كان الملف بصيغة HTML، يتم ترجمته مباشرة.
+    - إذا كان الملف بصيغة PDF، يتم تحويله إلى HTML باستخدام API ثم ترجمة الملف الناتج.
     """
     document = update.message.document
-    if document and document.file_name.lower().endswith('.html'):
+    if not document:
+        return
+
+    file_name = document.file_name.lower()
+    if file_name.endswith('.html'):
         file = document.get_file()
         file_bytes = file.download_as_bytearray()
-        
-        # اكتشاف الترميز الصحيح باستخدام chardet
         detected_encoding = chardet.detect(file_bytes)['encoding']
         try:
             html_content = file_bytes.decode(detected_encoding)
@@ -138,25 +137,119 @@ def handle_file(update, context):
             return
         
         translated_html = translate_html(html_content)
-        
-        # حفظ الملف المترجم مؤقتاً
         translated_file_path = 'translated.html'
         with open(translated_file_path, 'w', encoding='utf-8') as f:
             f.write(translated_html)
         
         update.message.reply_document(document=open(translated_file_path, 'rb'))
         os.remove(translated_file_path)
+    
+    elif file_name.endswith('.pdf'):
+        file = document.get_file()
+        input_filename = 'input.pdf'
+        file.download(input_filename)
+        update.message.reply_text("تم استلام الملف، جارٍ التحويل. يرجى الانتظار...")
+        
+        # قراءة الملف وترميزه بصيغة Base64
+        with open(input_filename, 'rb') as f:
+            file_data = f.read()
+        encoded_file = base64.b64encode(file_data).decode('utf-8')
+        
+        # تجهيز بيانات الطلب لإرسالها إلى API الخاص بـ Convertio
+        payload = {
+            "apikey": API_KEY,
+            "input": "base64",
+            "file": encoded_file,
+            "filename": document.file_name,
+            "outputformat": "html"
+        }
+        
+        try:
+            response = requests.post(CONVERTIO_API, json=payload)
+            response.raise_for_status()
+        except Exception as e:
+            logger.error(f"Error during conversion initiation: {e}")
+            update.message.reply_text('حدث خطأ أثناء بدء عملية التحويل.')
+            os.remove(input_filename)
+            return
+        
+        result = response.json()
+        if result.get('code') != 200:
+            error_msg = result.get('error', 'خطأ غير معروف.')
+            update.message.reply_text(f'خطأ في API التحويل: {error_msg}')
+            os.remove(input_filename)
+            return
+        
+        conversion_id = result['data']['id']
+        status_url = f"{CONVERTIO_API}/{conversion_id}/status"
+        while True:
+            time.sleep(2)
+            try:
+                status_resp = requests.get(status_url)
+                status_data = status_resp.json()
+            except Exception as e:
+                logger.error(f"Error checking conversion status: {e}")
+                update.message.reply_text('حدث خطأ أثناء التحقق من حالة التحويل.')
+                os.remove(input_filename)
+                return
+            step = status_data.get('data', {}).get('step')
+            if step == 'finish':
+                break
+            if step == 'error':
+                update.message.reply_text('حدث خطأ أثناء التحويل.')
+                os.remove(input_filename)
+                return
+        
+        download_url = status_data['data']['output']['url']
+        try:
+            download_resp = requests.get(download_url)
+            download_resp.raise_for_status()
+        except Exception as e:
+            logger.error(f"Error downloading converted file: {e}")
+            update.message.reply_text('حدث خطأ أثناء تحميل الملف المحول.')
+            os.remove(input_filename)
+            return
+        
+        output_filename = 'output.html'
+        with open(output_filename, 'wb') as f:
+            f.write(download_resp.content)
+        
+        # قراءة محتوى HTML المحول وترجمته
+        try:
+            with open(output_filename, 'r', encoding='utf-8') as f:
+                html_content = f.read()
+        except Exception as e:
+            logger.error(f"Error reading converted HTML: {e}")
+            update.message.reply_text('حدث خطأ أثناء قراءة الملف المحول.')
+            os.remove(input_filename)
+            os.remove(output_filename)
+            return
+        
+        translated_html = translate_html(html_content)
+        translated_file_path = 'translated.html'
+        with open(translated_file_path, 'w', encoding='utf-8') as f:
+            f.write(translated_html)
+        
+        update.message.reply_document(document=open(translated_file_path, 'rb'))
+        
+        # حذف الملفات المؤقتة
+        os.remove(input_filename)
+        os.remove(output_filename)
+        os.remove(translated_file_path)
+    
     else:
-        update.message.reply_text("يرجى إرسال ملف بصيغة HTML فقط.")
+        update.message.reply_text("يرجى إرسال ملف بصيغة HTML أو PDF فقط.")
 
-def main():
-    """الدالة الرئيسية لتشغيل البوت."""
-    updater = Updater(TOKEN, use_context=True)
+def start(update: Update, context: CallbackContext) -> None:
+    update.message.reply_text("مرحباً! أرسل لي ملف HTML أو PDF.\nفي حالة PDF سيتم تحويله إلى HTML ثم ترجمته.")
+
+def main() -> None:
+    updater = Updater(TELEGRAM_TOKEN, use_context=True)
     dp = updater.dispatcher
-
+    
     dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(MessageHandler(Filters.document, handle_file))
-
+    dp.add_handler(MessageHandler(Filters.document, handle_document))
+    
     updater.start_polling()
     logger.info("البوت يعمل الآن...")
     updater.idle()

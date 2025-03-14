@@ -5,4 +5,4 @@ googletrans==4.0.0rc1
 chardet
 arabic-reshaper
 python-bidi
-
+PyPDF2

@@ -56,12 +56,16 @@ def handle_document(update: Update, context: CallbackContext):
         return
 
     # ترجمة النصوص داخل عناصر HTML باستخدام TextBlob
+    # ترجمة النصوص داخل عناصر HTML مع كشف اللغة
     for element in tree.iter():
         if element.tag in ['script', 'style', 'noscript']:
             continue  # تجنب تغيير النصوص البرمجية
 
         if element.text and element.text.strip():
-            if any(c.isalpha() for c in element.text):  # التأكد من وجود أحرف
+            detected_lang = detect(element.text)  # كشف اللغة
+            print(f"🔹 النص: {element.text} | اللغة: {detected_lang}")  # تصحيح الأخطاء
+
+            if detected_lang == "en":  # فقط ترجم إذا كان إنجليزيًا
                 try:
                     blob = TextBlob(element.text)
                     element.text = str(blob.translate(to='ar'))
@@ -69,7 +73,10 @@ def handle_document(update: Update, context: CallbackContext):
                     logger.error(f"خطأ أثناء ترجمة النص '{element.text}': {e}")
 
         if element.tail and element.tail.strip():
-            if any(c.isalpha() for c in element.tail):
+            detected_lang = detect(element.tail)
+            print(f"🔹 النص: {element.tail} | اللغة: {detected_lang}")
+
+            if detected_lang == "en":
                 try:
                     blob = TextBlob(element.tail)
                     element.tail = str(blob.translate(to='ar'))

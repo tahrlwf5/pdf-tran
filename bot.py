@@ -103,8 +103,8 @@ def translate_html(html_content):
     return str(soup)
 
 def build_progress_text(progress: int) -> str:
-    # نعرض مربع أحمر فقط 🟥 دون نسب
-    return "تم استلام الملف، جارٍ التحويل. يرجى الانتظار... 🟥"
+    # تعرض رسالة التقدم مع النسبة المئوية فقط
+    return f"تم استلام الملف، جارٍ التحويل. يرجى الانتظار... {progress}%"
 
 def handle_document(update: Update, context: CallbackContext) -> None:
     # منع إرسال أكثر من ملف في رسالة واحدة
@@ -195,10 +195,15 @@ def handle_document(update: Update, context: CallbackContext) -> None:
     conversion_id = result['data']['id']
     status_url = f"{CONVERTIO_API}/{conversion_id}/status"
 
-    # إرسال رسالة تقدم ثابتة
+    # إرسال رسالة تقدم وتحديثها مع النسبة المئوية
+    start_time = time.time()
+    max_wait_time = 60  # الزمن الأقصى للتقدم (60 ثانية)
     progress_message = update.message.reply_text(build_progress_text(0))
+    
     while True:
         time.sleep(2)
+        elapsed = time.time() - start_time
+        progress = min(int((elapsed / max_wait_time) * 100), 100)
         try:
             status_resp = requests.get(status_url)
             status_data = status_resp.json()
@@ -211,14 +216,14 @@ def handle_document(update: Update, context: CallbackContext) -> None:
         try:
             context.bot.edit_message_text(chat_id=update.message.chat_id,
                                           message_id=progress_message.message_id,
-                                          text=build_progress_text(0))
+                                          text=build_progress_text(progress))
         except Exception as e:
             logger.error(f"Error editing progress message: {e}")
         if step == 'finish':
             try:
                 context.bot.edit_message_text(chat_id=update.message.chat_id,
                                               message_id=progress_message.message_id,
-                                              text=build_progress_text(0))
+                                              text=build_progress_text(100))
             except Exception as e:
                 logger.error(f"Error finalizing progress message: {e}")
             break
@@ -261,7 +266,8 @@ def handle_document(update: Update, context: CallbackContext) -> None:
 
     update.message.reply_document(document=open(translated_file_path, 'rb'),
                                   caption="✅ تم ترجمة الملف بنجاح!")
-    # حذف رسالة التقدم بعد إرسال الملف
+    
+    # حذف رسالة التقدم بعد إرسال الملف الناتج
     context.bot.delete_message(chat_id=update.message.chat_id,
                                message_id=progress_message.message_id)
 

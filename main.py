@@ -87,7 +87,7 @@ def handle_file(update: Update, context: CallbackContext):
 
 def main():
     # ضع هنا توكن البوت الخاص بك
-    token = "8060810536:AAEaV76YpcZyIxI4Qb_taVMG1ijn8hVYHt0"
+    token = "6016945663:AAHjacRdRfZ2vUgS2SLmoFgHfMdUye4l6bA"
     
     updater = Updater(token, use_context=True)
     dp = updater.dispatcher

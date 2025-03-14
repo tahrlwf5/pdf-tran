@@ -1,102 +1,109 @@
-import os
 import logging
-from telegram import Update, InputFile
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
-from bs4 import BeautifulSoup
+import os
+import io
+from lxml import html
 from googletrans import Translator
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# إعداد تسجيل الأخطاء
+# إعداد سجل الأخطاء للتتبع
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# إنشاء مثيل للمترجم
-translator = Translator()
+# التوكن الخاص بالبوت
+TELEGRAM_TOKEN = '5153049530:AAG4LS17jVZdseUnGkodRpHzZxGLOnzc1gs'  # استبدل هذا بتوكن البوت الخاص بك
 
-# قم بتعديل معرف المشرف هنا أو من خلال متغير بيئي
-ADMIN_ID = os.getenv("ADMIN_ID", "5198110160")  # تأكد من وضع المعرف الصحيح
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "مرحبًا، أرسل لي ملف HTML وسأقوم بترجمته من الإنجليزية إلى العربية مع الحفاظ على التصميم."
+    )
 
-def start(update: Update, context: CallbackContext):
-    user = update.message.from_user
-    # إرسال رسالة ترحيب للمستخدم
-    update.message.reply_text("مرحباً، أرسل لي ملف HTML لأقوم بترجمته من الإنجليزية إلى العربية.")
-    # إرسال إشعار للمشرف مع بيانات المستخدم (معرف المستخدم واسم المستخدم إن وجد)
-    admin_message = f"دخل المستخدم:\nمعرف المستخدم: {user.id}\nالاسم: {user.first_name} {user.last_name if user.last_name else ''}\nاسم المستخدم: @{user.username if user.username else 'غير متوفر'}"
-    context.bot.send_message(chat_id=ADMIN_ID, text=admin_message)
-
-def translate_html(file_path: str) -> str:
-    """
-    تقرأ الملف، تقوم بتحليل الـ HTML وترجمة النصوص من الإنجليزية إلى العربية.
-    """
-    with open(file_path, 'r', encoding='utf-8') as f:
-        html = f.read()
-    soup = BeautifulSoup(html, 'html.parser')
-    
-    # المرور على جميع العقد النصية وترجمتها
-    for element in soup.find_all(text=True):
-        original_text = element.strip()
-        if original_text:
-            try:
-                translated_text = translator.translate(original_text, src='en', dest='ar').text
-                element.replace_with(translated_text)
-            except Exception as e:
-                logger.error(f"حدث خطأ أثناء الترجمة: {e}")
-    return str(soup)
-
-def handle_file(update: Update, context: CallbackContext):
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     document = update.message.document
-    if document and document.file_name.endswith('.html'):
-        # التحقق من حجم الملف (أقصى حجم 2MB)
-        if document.file_size > 2 * 1024 * 1024:
-            update.message.reply_text("❌ حجم الملف أكبر من 2MB. يرجى إرسال ملف بحجم أصغر.")
-            return
 
-        file_id = document.file_id
-        new_file = context.bot.get_file(file_id)
-        original_file_path = document.file_name
-        new_file.download(custom_path=original_file_path)
-        logger.info("تم تحميل الملف إلى %s", original_file_path)
+    # التأكد من أن الملف بامتداد HTML
+    if not document.file_name.lower().endswith('.html'):
+        await update.message.reply_text("يرجى إرسال ملف HTML فقط.")
+        return
+
+    file_id = document.file_id
+    new_file = await context.bot.get_file(file_id)
+    
+    # إنشاء مجلد للتنزيل إذا لم يكن موجوداً
+    os.makedirs("downloads", exist_ok=True)
+    file_path = os.path.join("downloads", document.file_name)
+    await new_file.download_to_drive(custom_path=file_path)
+    
+    # قراءة محتوى ملف HTML
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            html_content = f.read()
+    except Exception as e:
+        logger.error(f"Error reading file: {e}")
+        await update.message.reply_text("حدث خطأ أثناء قراءة الملف.")
+        return
+
+    # تحليل الملف باستخدام lxml
+    try:
+        tree = html.fromstring(html_content)
+    except Exception as e:
+        logger.error(f"Error parsing HTML: {e}")
+        await update.message.reply_text("حدث خطأ أثناء تحليل الملف HTML.")
+        return
+
+    translator = Translator()
+
+    # المرور على جميع العناصر وتعديل النصوص
+    for element in tree.iter():
+        # تخطي العناصر التي لا تحتاج للترجمة مثل script و style و noscript
+        if element.tag in ['script', 'style', 'noscript']:
+            continue
         
-        # إبلاغ المستخدم بأنه جاري ترجمة الملف
-        update.message.reply_text("جاري ترجمة ملفك انتظر بعض دقائق...")
+        if element.text and element.text.strip():
+            try:
+                translated_text = translator.translate(element.text, src='en', dest='ar').text
+                element.text = translated_text
+            except Exception as e:
+                logger.error(f"Error translating text '{element.text}': {e}")
         
-        # ترجمة محتوى HTML
-        translated_html = translate_html(original_file_path)
-        
-        # حفظ الملف المترجم
-        translated_file_path = f"translated_{original_file_path}"
-        with open(translated_file_path, 'w', encoding='utf-8') as f:
+        if element.tail and element.tail.strip():
+            try:
+                translated_tail = translator.translate(element.tail, src='en', dest='ar').text
+                element.tail = translated_tail
+            except Exception as e:
+                logger.error(f"Error translating tail text '{element.tail}': {e}")
+
+    # استخراج النص المترجم للملف HTML مع الحفاظ على التصميم
+    translated_html = html.tostring(tree, encoding='unicode', pretty_print=True)
+    
+    # حفظ الملف المترجم
+    output_file_path = file_path.replace('.html', '_translated.html')
+    try:
+        with open(output_file_path, 'w', encoding='utf-8') as f:
             f.write(translated_html)
-            
-        # إرسال الملف المترجم مع Caption
-        caption_text = ("✅ تم الترجمة بنجاح!\n"
-                        "قم بإعادة توجيه هذا الملف للبوت الرئيسي لتحويله إلى PDF: @i2pdfbot \n"
-                        "@ta_ja199 للاستفسار")
-        context.bot.send_document(
-            chat_id=update.message.chat_id, 
-            document=open(translated_file_path, 'rb'),
-            caption=caption_text
-        )
-        
-        # حذف الملفات المؤقتة
-        os.remove(original_file_path)
-        os.remove(translated_file_path)
-    else:
-        update.message.reply_text("يرجى إرسال ملف بصيغة HTML فقط.")
+    except Exception as e:
+        logger.error(f"Error writing translated file: {e}")
+        await update.message.reply_text("حدث خطأ أثناء حفظ الملف المترجم.")
+        return
+
+    # إرسال الملف المترجم للمستخدم
+    with open(output_file_path, 'rb') as translated_file:
+        await update.message.reply_document(document=translated_file, filename=os.path.basename(output_file_path))
+    
+    # حذف الملفات المؤقتة (اختياري)
+    os.remove(file_path)
+    os.remove(output_file_path)
 
 def main():
-    # ضع هنا توكن البوت الخاص بك
-    token = "6016945663:AAHjacRdRfZ2vUgS2SLmoFgHfMdUye4l6bA"
-    
-    updater = Updater(token, use_context=True)
-    dp = updater.dispatcher
-    
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(MessageHandler(Filters.document, handle_file))
-    
-    updater.start_polling()
-    updater.idle()
+    application = Application.builder().token(TELEGRAM_TOKEN).build()
+
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+
+    application.run_polling()
 
 if __name__ == '__main__':
     main()

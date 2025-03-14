@@ -1,16 +1,10 @@
-FROM python:3.10
+FROM python:3.10-slim
 
-# تحديد مجلد العمل
 WORKDIR /app
 
-# نسخ الملفات إلى الحاوية
-COPY . /app
-
-# تثبيت المتطلبات
+COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-# تحميل قاعدة بيانات TextBlob
-RUN python -m textblob.download_corpora
+COPY . .
 
-# تشغيل البوت
 CMD ["python", "bot.py"]

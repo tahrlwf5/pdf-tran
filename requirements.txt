@@ -6,3 +6,5 @@ chardet
 arabic-reshaper
 python-bidi
 PyPDF2
+python-docx
+python-pptx

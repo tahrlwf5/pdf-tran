@@ -191,8 +191,8 @@ def handle_document(update: Update, context: CallbackContext) -> None:
         return
 
     # التحقق من حجم الملف (1 ميجابايت)
-    if document.file_size > 2 * 1024 * 1024:
-        update.message.reply_text("❌ حجم الملف أكبر من 2MB. يرجى إرسال ملف PDF أصغر.\n قسم بضغط ملف في البوت هذا :@i2pdfbot\n ثم قم بارسال ملف لكي اترجمة")
+    if document.file_size > 1 * 1024 * 1024:
+        update.message.reply_text("❌ حجم الملف أكبر من 1MB. يرجى إرسال ملف PDF أصغر.\n قسم بضغط ملف في البوت هذا :@i2pdfbot\n ثم قم بارسال ملف لكي اترجمة")
         return
 
     # تحديث حد الاستخدام اليومي
@@ -201,8 +201,8 @@ def handle_document(update: Update, context: CallbackContext) -> None:
     if user_id in user_file_usage:
         last_date, count = user_file_usage[user_id]
         if last_date == today_str:
-            if count >= 10:
-                update.message.reply_text("🚫 لقد تجاوزت الحد الأقصى (10 ملفات يوميًا). يرجى المحاولة غدًا.")
+            if count >= 5:
+                update.message.reply_text("🚫 لقد تجاوزت الحد الأقصى (5 ملفات يوميًا). يرجى المحاولة غدًا.")
                 return
             else:
                 user_file_usage[user_id] = (today_str, count + 1)
@@ -223,8 +223,8 @@ def handle_document(update: Update, context: CallbackContext) -> None:
             with open(input_filename, 'rb') as f:
                 reader = PyPDF2.PdfReader(f)
                 num_pages = len(reader.pages)
-            if num_pages > 10:
-                update.message.reply_text("❌ الحد الأقصى هو 10 صفحات بسبب التحميل الزائد.\n قم بتقسيم ملف في البوت هذا :@i2pdfbot\n ثم قم بارسال ملف حتى اترجمة لك")
+            if num_pages > 5:
+                update.message.reply_text("❌ الحد الأقصى هو 5 صفحات بسبب التحميل الزائد.\n قم بتقسيم ملف في البوت هذا :@i2pdfbot\n ثم قم بارسال ملف حتى اترجمة لك")
                 os.remove(input_filename)
                 return
         except Exception as e:
